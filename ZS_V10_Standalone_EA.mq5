@@ -1,18 +1,8 @@
 //+------------------------------------------------------------------+
 //|  ZS_V10_Standalone_EA.mq5                                       |
 //|  ZS XAUUSD V10 SR Precision Pro — Standalone MT5 EA            |
-//|                                                                  |
 //|  Replicates Pine Script indicator ZS XAUUSD V10 logic 1:1      |
-//|  — EMA M1/M5/M15 trend, RSI, ADX, ATR, BB, SR levels          |
-//|  — Score system, all entry conditions, session WIB filter      |
-//|  — Trailing stop: TP1→BE, TP2→TP1, TP3→Close                  |
-//|  — No TradingView, no server, no webhook required              |
-//|                                                                  |
-//|  INSTALL:                                                        |
-//|  1. Copy ke: MT5 > File > Open Data Folder > MQL5 > Experts    |
-//|  2. Compile (F7)                                                 |
-//|  3. Attach ke chart XAUUSDc timeframe M1                       |
-//|  4. Aktifkan "Allow Automated Trading"                          |
+//|  No TradingView, no server, no webhook required                 |
 //+------------------------------------------------------------------+
 #property copyright "ZS Trading"
 #property version   "1.00"
@@ -28,20 +18,18 @@ input string InpEntryMode         = "BALANCED";       // SAFE / BALANCED / AGGRE
 input int    InpMinQualitySafe    = 88;
 input int    InpMinQualityBal     = 82;
 input int    InpMinQualityAgg     = 72;
-input int    InpScoreGap          = 6;   // Minimal selisih BUY vs SELL score
-input int    InpCooldownBars      = 2;   // Cooldown bars setelah TP/SL
+input int    InpScoreGap          = 6;
+input int    InpCooldownBars      = 2;
 
-//==================== SESSION FILTER ====================//
 input group "=== SESSION FILTER WIB ==="
-input bool   InpUseWIBFilter      = true;  // Aktifkan filter jam 04:00-15:00 WIB
+input bool   InpUseWIBFilter      = true;
 
-//==================== TP / SL ====================//
 input group "=== TP / SL ==="
-input double InpPointSize         = 0.01;  // Point Size XAUUSD
+input double InpPointSize         = 0.01;
 input int    InpTP1Points         = 200;
 input int    InpTP2Points         = 600;
 input int    InpTP3Points         = 900;
-input string InpSLMode            = "ADAPTIVE"; // ADAPTIVE / FIXED
+input string InpSLMode            = "ADAPTIVE";
 input int    InpATRLen            = 14;
 input double InpATRSLMult         = 1.45;
 input int    InpMinSLPoints       = 650;
@@ -49,48 +37,42 @@ input int    InpMaxSLPoints       = 900;
 input int    InpFixedSLPoints     = 800;
 input int    InpMaxHoldMinutes    = 180;
 
-//==================== EMA TREND ====================//
 input group "=== EMA TREND ==="
-input int    InpEmaFastLen        = 20;   // EMA Fast M1
-input int    InpEmaMidLen         = 50;   // EMA Mid M1
-input int    InpEmaSlowLen        = 200;  // EMA Slow M1 (EMA200)
-input int    InpMtfEmaFastLen     = 50;   // EMA Fast M5/M15
-input int    InpMtfEmaSlowLen     = 200;  // EMA Slow M5/M15
-input int    InpEma200SlopeBars   = 5;    // Bar untuk hitung slope EMA200
+input int    InpEmaFastLen        = 20;
+input int    InpEmaMidLen         = 50;
+input int    InpEmaSlowLen        = 200;
+input int    InpMtfEmaFastLen     = 50;
+input int    InpMtfEmaSlowLen     = 200;
+input int    InpEma200SlopeBars   = 5;
 
-//==================== MOMENTUM ====================//
 input group "=== MOMENTUM ==="
 input int    InpRsiLen            = 14;
 input int    InpAdxLen            = 14;
-input int    InpAdxSmooth         = 14;
 input int    InpBBLen             = 50;
 input double InpBBDev             = 2.4;
 input double InpMinBodyRatio      = 0.30;
 input double InpCloseEdge         = 0.58;
-input double InpMaxCandleATR      = 2.6;   // Anti spike
+input double InpMaxCandleATR      = 2.6;
 input double InpSideMaxADX        = 22.0;
 input double InpMinATRPrice       = 0.25;
 input double InpMaxATRPrice       = 7.00;
 
-//==================== SR LEVELS ====================//
 input group "=== HIGH VOLUME SR ==="
 input int    InpSRLookback        = 20;
-input double InpSRBoxWidth        = 1.0;   // SR Box Width ATR
+input double InpSRBoxWidth        = 1.0;
 input double InpSRBufferATR       = 0.30;
 input int    InpSRBoostPts        = 8;
 input int    InpSRBreakBoostPts   = 12;
 input int    InpSRDangerPenalty   = 18;
-input bool   InpSRBoostBlock      = true;  // BOOST + BLOCK DANGER
-input int    InpSRRetestBars      = 18;    // Maks bar retest setelah break
+input bool   InpSRBoostBlock      = true;
+input int    InpSRRetestBars      = 18;
 input int    InpRetestBoostPts    = 16;
 
-//==================== PRECISION SR RULES ====================//
 input group "=== PRECISION SR RULES ==="
 input bool   InpBlockBuyAtRedBox        = true;
 input bool   InpBlockSellAtGreenBox     = true;
 input bool   InpRequireBreakForReversal = true;
 
-//==================== SR STRENGTH SETUP ====================//
 input group "=== SR STRENGTH SETUP ==="
 input bool   InpUseSRStrength        = true;
 input bool   InpAllowSRMedium        = true;
@@ -101,7 +83,7 @@ input int    InpSRStrongGap          = 6;
 input int    InpSRStrongTP1Pts       = 250;
 input int    InpSRStrongTP2Pts       = 700;
 input int    InpSRStrongTP3Pts       = 1100;
-input string InpSRStrongSLMode       = "ADAPTIVE"; // ADAPTIVE / FIXED
+input string InpSRStrongSLMode       = "ADAPTIVE";
 input double InpSRStrongATRSLMult    = 1.30;
 input int    InpSRStrongMinSL        = 550;
 input int    InpSRStrongMaxSL        = 950;
@@ -109,13 +91,12 @@ input int    InpSRStrongFixedSL      = 700;
 input int    InpSRMediumTP1Pts       = 150;
 input int    InpSRMediumTP2Pts       = 400;
 input int    InpSRMediumTP3Pts       = 650;
-input string InpSRMediumSLMode       = "ADAPTIVE"; // ADAPTIVE / FIXED
+input string InpSRMediumSLMode       = "ADAPTIVE";
 input double InpSRMediumATRSLMult    = 1.05;
 input int    InpSRMediumMinSL        = 420;
 input int    InpSRMediumMaxSL        = 760;
 input int    InpSRMediumFixedSL      = 560;
 
-//==================== ORDER ====================//
 input group "=== ORDER ==="
 input string InpSymbol            = "XAUUSDc";
 input int    InpMagicNumber       = 909506;
@@ -125,6 +106,12 @@ input int    InpSlippage          = 20;
 input bool   InpTrailingEnabled   = true;
 input bool   InpDeleteOnNew       = true;
 input bool   InpEnabled           = true;
+
+input group "=== PANEL ==="
+input bool   InpShowPanel         = true;       // Tampilkan panel status
+input int    InpPanelX            = 20;         // Posisi X panel (dari kanan)
+input int    InpPanelY            = 30;         // Posisi Y panel (dari atas)
+input int    InpPanelFontSize     = 9;          // Ukuran font panel
 
 //==================== INDICATOR HANDLES ====================//
 int hEmaFast, hEmaMid, hEmaSlow;
@@ -142,26 +129,49 @@ int    gDir=0;
 bool   gHitTP1=false, gHitTP2=false;
 datetime gOpenTime=0;
 
-//==================== BAR & COOLDOWN TRACKING ====================//
+//==================== BAR TRACKING ====================//
 datetime gLastBarTime=0;
-int    gLastExitBar=0;  // bars(M1) value when last trade closed
+int    gLastExitBar=0;
 
 //==================== SR STATE ====================//
-double gSupLevel=0,  gSupLevel1=0;   // support top, support bottom
-double gResLevel=0,  gResLevel1=0;   // resistance bottom, resistance top
+double gSupLevel=0,  gSupLevel1=0;
+double gResLevel=0,  gResLevel1=0;
 bool   gResIsSup=false, gSupIsRes=false;
-// Break tracking for retest
 double gBreakResHigh=0;  int gBreakResBar=0;
 double gBreakSupLow=0;   int gBreakSupBar=0;
-// Previous SR for same-bar change detection
-double gPrevSupLevel=0, gPrevResLevel=0;
+
+//==================== PANEL STATE (updated tiap bar) ====================//
+string gPanelStatus    = "INIT";
+string gPanelSetup     = "-";
+int    gBuyScore       = 0;
+int    gSellScore      = 0;
+int    gBullCount      = 0;
+int    gBearCount      = 0;
+bool   gM1Bull=false, gM5Bull=false, gM15Bull=false;
+bool   gM1Bear=false, gM5Bear=false, gM15Bear=false;
+double gRsiVal         = 0;
+double gAdxVal         = 0;
+double gAtrVal         = 0;
+bool   gSidewaysFlag   = false;
+string gSRStatus       = "-";
+bool   gSRBlockBuy     = false;
+bool   gSRBlockSell    = false;
+bool   gPrecBlockBuy   = false;
+bool   gPrecBlockSell  = false;
+bool   gSessionOK      = false;
+int    gMinQuality     = 82;
+int    gWinCount       = 0;
+int    gLossCount      = 0;
+int    gTotalSignals   = 0;
+
+//==================== PANEL OBJECT PREFIX ====================//
+#define PANEL_PREFIX "ZSEA_"
 
 //+------------------------------------------------------------------+
 int OnInit()
 {
    if(!InpEnabled) { Print("EA dinonaktifkan."); return INIT_SUCCEEDED; }
 
-   // Create all indicator handles once
    hEmaFast   = iMA(InpSymbol, PERIOD_M1,  InpEmaFastLen,    0, MODE_EMA, PRICE_CLOSE);
    hEmaMid    = iMA(InpSymbol, PERIOD_M1,  InpEmaMidLen,     0, MODE_EMA, PRICE_CLOSE);
    hEmaSlow   = iMA(InpSymbol, PERIOD_M1,  InpEmaSlowLen,    0, MODE_EMA, PRICE_CLOSE);
@@ -178,7 +188,7 @@ int OnInit()
       hEmaM5Fast==INVALID_HANDLE || hEmaM15Fast==INVALID_HANDLE ||
       hRsi==INVALID_HANDLE || hAdx==INVALID_HANDLE || hAtr==INVALID_HANDLE || hBB==INVALID_HANDLE)
    {
-      Print("ERROR: Gagal membuat indicator handles. Pastikan symbol benar: ", InpSymbol);
+      Print("ERROR: Gagal membuat indicator handles. Symbol benar? ", InpSymbol);
       return INIT_FAILED;
    }
 
@@ -186,13 +196,17 @@ int OnInit()
    trade.SetDeviationInPoints(InpSlippage);
    trade.SetTypeFilling(ORDER_FILLING_IOC);
 
-   Print("ZS V10 Standalone EA v1.0 aktif | Symbol: ", InpSymbol, " | Mode: ", InpModeSignal, " | Entry: ", InpEntryMode);
+   PanelDelete();
+   PanelCreate();
+
+   Print("ZS V10 Standalone EA v1.0 aktif | Symbol: ", InpSymbol);
    return INIT_SUCCEEDED;
 }
 
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
 {
+   PanelDelete();
    IndicatorRelease(hEmaFast);  IndicatorRelease(hEmaMid);   IndicatorRelease(hEmaSlow);
    IndicatorRelease(hEmaM5Fast);IndicatorRelease(hEmaM5Slow);
    IndicatorRelease(hEmaM15Fast);IndicatorRelease(hEmaM15Slow);
@@ -211,7 +225,7 @@ double Buf(int handle, int bufIdx, int shift)
 }
 
 //+------------------------------------------------------------------+
-// Session filter: WIB 04:00-15:00 = UTC 21:00 (prev) - 08:00
+// Session filter: WIB 04:00-15:00 = UTC 21:00-08:00
 //+------------------------------------------------------------------+
 bool InWIBSession()
 {
@@ -219,111 +233,63 @@ bool InWIBSession()
    MqlDateTime dt;
    TimeToStruct(TimeGMT(), dt);
    int h = dt.hour;
-   // UTC 21,22,23 = WIB 04,05,06 (dini hari WIB)
-   // UTC 00-07    = WIB 07-14
-   // UTC 08       = WIB 15 (batas akhir)
    return (h >= 21 || h < 8);
 }
 
 //+------------------------------------------------------------------+
-// Hitung pivot high: apakah bar[shift] adalah highest di window lookback?
+// Pivot High / Low detection
 //+------------------------------------------------------------------+
 double CalcPivotHigh(int lookback, int shift)
 {
-   int needed = shift + lookback + 1;
    MqlRates rates[];
    ArraySetAsSeries(rates, true);
-   if(CopyRates(InpSymbol, PERIOD_M1, 0, needed + lookback, rates) < needed + lookback) return 0;
-
-   int idx = shift; // rates is series: rates[0]=current, rates[shift]=bar we check
+   int needed = shift + lookback + 1 + lookback;
+   if(CopyRates(InpSymbol, PERIOD_M1, 0, needed, rates) < needed) return 0;
+   int idx = shift;
    if(idx < lookback || idx + lookback >= ArraySize(rates)) return 0;
-
    double cHigh = rates[idx].high;
    for(int i = idx - lookback; i <= idx + lookback; i++)
-   {
-      if(i == idx) continue;
-      if(rates[i].high >= cHigh) return 0;
-   }
+   { if(i != idx && rates[i].high >= cHigh) return 0; }
    return cHigh;
 }
 
-//+------------------------------------------------------------------+
-// Hitung pivot low
-//+------------------------------------------------------------------+
 double CalcPivotLow(int lookback, int shift)
 {
-   int needed = shift + lookback + 1;
    MqlRates rates[];
    ArraySetAsSeries(rates, true);
-   if(CopyRates(InpSymbol, PERIOD_M1, 0, needed + lookback, rates) < needed + lookback) return 0;
-
+   int needed = shift + lookback + 1 + lookback;
+   if(CopyRates(InpSymbol, PERIOD_M1, 0, needed, rates) < needed) return 0;
    int idx = shift;
    if(idx < lookback || idx + lookback >= ArraySize(rates)) return 0;
-
    double cLow = rates[idx].low;
    for(int i = idx - lookback; i <= idx + lookback; i++)
-   {
-      if(i == idx) continue;
-      if(rates[i].low <= cLow) return 0;
-   }
+   { if(i != idx && rates[i].low <= cLow) return 0; }
    return cLow;
 }
 
 //+------------------------------------------------------------------+
-// Update SR levels — scan pivot high/low terbaru dengan volume filter
-// (Pine Script: pivot high = resistance, pivot low = support)
+// Update SR Levels
 //+------------------------------------------------------------------+
 void UpdateSRLevels(double atrVal)
 {
    double widthSR = atrVal * InpSRBoxWidth;
    int lookback   = InpSRLookback;
-   int scanRange  = lookback * 6; // scan 6x lookback ke belakang
+   int scanRange  = lookback * 6;
 
-   // Volume (tick_volume) untuk filter: pivot dengan volume di atas rata-rata
-   // Pine Script: vol_hi = highest(Vol/2.5, srVolLen); pivot low = support jika Vol > vol_hi
-   // Simplified: accept pivot dengan volume >= average atau just accept all pivots (seperti default setting)
-
-   // Cari support terbaru (pivot low)
-   bool foundSup = false;
-   for(int shift = lookback + 1; shift <= scanRange; shift++)
+   for(int shift = lookback+1; shift <= scanRange; shift++)
    {
       double pl = CalcPivotLow(lookback, shift);
-      if(pl > 0)
-      {
-         double newSup = pl, newSup1 = pl - widthSR;
-         if(!foundSup || newSup != gSupLevel)
-         {
-            gPrevSupLevel = gSupLevel;
-            gSupLevel  = newSup;
-            gSupLevel1 = newSup1;
-         }
-         foundSup = true;
-         break;
-      }
+      if(pl > 0) { gSupLevel = pl; gSupLevel1 = pl - widthSR; break; }
    }
-
-   // Cari resistance terbaru (pivot high)
-   bool foundRes = false;
-   for(int shift = lookback + 1; shift <= scanRange; shift++)
+   for(int shift = lookback+1; shift <= scanRange; shift++)
    {
       double ph = CalcPivotHigh(lookback, shift);
-      if(ph > 0)
-      {
-         double newRes = ph, newRes1 = ph + widthSR;
-         if(!foundRes || newRes != gResLevel)
-         {
-            gPrevResLevel = gResLevel;
-            gResLevel  = newRes;
-            gResLevel1 = newRes1;
-         }
-         foundRes = true;
-         break;
-      }
+      if(ph > 0) { gResLevel = ph; gResLevel1 = ph + widthSR; break; }
    }
 }
 
 //+------------------------------------------------------------------+
-// Tutup semua posisi EA ini
+// Trade helpers
 //+------------------------------------------------------------------+
 void CloseMyPositions()
 {
@@ -335,24 +301,17 @@ void CloseMyPositions()
    }
 }
 
-//+------------------------------------------------------------------+
-// Modifikasi SL posisi
-//+------------------------------------------------------------------+
 void ModifySL(ulong ticket, double newSL)
 {
    int digits = (int)SymbolInfoInteger(InpSymbol, SYMBOL_DIGITS);
    newSL = NormalizeDouble(newSL, digits);
    if(!posInfo.SelectByTicket(ticket)) return;
-   double curTP = posInfo.TakeProfit();
-   if(trade.PositionModify(ticket, newSL, curTP))
-      Print("SL diubah ke ", newSL, " ticket=", ticket);
+   if(trade.PositionModify(ticket, newSL, posInfo.TakeProfit()))
+      Print("SL diubah ke ", newSL);
    else
-      Print("Gagal modifikasi SL: ", trade.ResultRetcodeDescription());
+      Print("Gagal modify SL: ", trade.ResultRetcodeDescription());
 }
 
-//+------------------------------------------------------------------+
-// Cek apakah ada posisi aktif EA ini
-//+------------------------------------------------------------------+
 bool HasActivePosition()
 {
    for(int i = PositionsTotal()-1; i >= 0; i--)
@@ -363,99 +322,42 @@ bool HasActivePosition()
    return false;
 }
 
-//+------------------------------------------------------------------+
-// Reset state setelah trade selesai
-//+------------------------------------------------------------------+
 void ResetTrade()
 {
    gDir=0; gHitTP1=false; gHitTP2=false;
    gEntry=0; gSL=0; gTP1=0; gTP2=0; gTP3=0;
    gLastExitBar = iBars(InpSymbol, PERIOD_M1) - 1;
+   gPanelStatus = "WAIT";
+   gPanelSetup  = "-";
    Print("Trade selesai. Menunggu sinyal berikutnya.");
 }
 
 //+------------------------------------------------------------------+
-// TRAILING STOP — dijalankan setiap tick
-// Logic sama dengan bridge EA:
-//   TP1 hit → SL pindah ke Breakeven (entry)
-//   TP2 hit → SL pindah ke TP1
-//   TP3 hit → Close posisi
+// TRAILING STOP
 //+------------------------------------------------------------------+
 void ManageTrailingStop()
 {
    if(!InpTrailingEnabled || gDir==0) return;
-
    for(int i = PositionsTotal()-1; i >= 0; i--)
    {
       if(!posInfo.SelectByIndex(i)) continue;
       if(posInfo.Magic()!=InpMagicNumber || posInfo.Symbol()!=InpSymbol) continue;
-
       double curPrice = posInfo.PriceCurrent();
       double curSL    = posInfo.StopLoss();
       ulong  ticket   = posInfo.Ticket();
       double pt       = SymbolInfoDouble(InpSymbol, SYMBOL_POINT);
 
-      if(gDir == 1) // BUY
+      if(gDir == 1)
       {
-         // TP3 tercapai → close
-         if(gTP3 > 0 && curPrice >= gTP3)
-         {
-            Print("TP3 TERCAPAI! Closing BUY @ ", curPrice);
-            trade.PositionClose(ticket);
-            ResetTrade();
-            return;
-         }
-         // TP2 tercapai → SL ke TP1
-         if(!gHitTP2 && gTP2 > 0 && curPrice >= gTP2)
-         {
-            gHitTP2 = true;
-            if(gTP1 > 0 && curSL < gTP1 - pt)
-            {
-               Print("TP2 TERCAPAI → SL pindah ke TP1 (", gTP1, ")");
-               ModifySL(ticket, gTP1);
-            }
-         }
-         // TP1 tercapai → SL ke Breakeven
-         if(!gHitTP1 && gTP1 > 0 && curPrice >= gTP1)
-         {
-            gHitTP1 = true;
-            if(curSL < gEntry - pt)
-            {
-               Print("TP1 TERCAPAI → SL pindah ke Breakeven (", gEntry, ")");
-               ModifySL(ticket, gEntry);
-            }
-         }
+         if(gTP3>0 && curPrice>=gTP3) { Print("TP3 TERCAPAI! Closing BUY"); gLossCount--; gWinCount++; trade.PositionClose(ticket); ResetTrade(); return; }
+         if(!gHitTP2 && gTP2>0 && curPrice>=gTP2) { gHitTP2=true; if(gTP1>0 && curSL<gTP1-pt){ Print("TP2 hit → SL ke TP1"); ModifySL(ticket,gTP1); } }
+         if(!gHitTP1 && gTP1>0 && curPrice>=gTP1) { gHitTP1=true; if(curSL<gEntry-pt){ Print("TP1 hit → SL ke BE"); ModifySL(ticket,gEntry); } }
       }
-      else if(gDir == -1) // SELL
+      else if(gDir == -1)
       {
-         // TP3 tercapai → close
-         if(gTP3 > 0 && curPrice <= gTP3)
-         {
-            Print("TP3 TERCAPAI! Closing SELL @ ", curPrice);
-            trade.PositionClose(ticket);
-            ResetTrade();
-            return;
-         }
-         // TP2 tercapai → SL ke TP1
-         if(!gHitTP2 && gTP2 > 0 && curPrice <= gTP2)
-         {
-            gHitTP2 = true;
-            if(gTP1 > 0 && curSL > gTP1 + pt)
-            {
-               Print("TP2 TERCAPAI → SL pindah ke TP1 (", gTP1, ")");
-               ModifySL(ticket, gTP1);
-            }
-         }
-         // TP1 tercapai → SL ke Breakeven
-         if(!gHitTP1 && gTP1 > 0 && curPrice <= gTP1)
-         {
-            gHitTP1 = true;
-            if(curSL > gEntry + pt)
-            {
-               Print("TP1 TERCAPAI → SL pindah ke Breakeven (", gEntry, ")");
-               ModifySL(ticket, gEntry);
-            }
-         }
+         if(gTP3>0 && curPrice<=gTP3) { Print("TP3 TERCAPAI! Closing SELL"); gLossCount--; gWinCount++; trade.PositionClose(ticket); ResetTrade(); return; }
+         if(!gHitTP2 && gTP2>0 && curPrice<=gTP2) { gHitTP2=true; if(gTP1>0 && curSL>gTP1+pt){ Print("TP2 hit → SL ke TP1"); ModifySL(ticket,gTP1); } }
+         if(!gHitTP1 && gTP1>0 && curPrice<=gTP1) { gHitTP1=true; if(curSL>gEntry+pt){ Print("TP1 hit → SL ke BE"); ModifySL(ticket,gEntry); } }
       }
    }
 }
@@ -467,398 +369,578 @@ void OnTick()
 {
    if(!InpEnabled) return;
 
-   // Trailing stop jalan setiap tick
    ManageTrailingStop();
 
-   // Sinyal hanya dicek pada bar baru (seperti barstate.isconfirmed di Pine Script)
    datetime curBarTime = iTime(InpSymbol, PERIOD_M1, 0);
-   if(curBarTime == gLastBarTime) return;
+   if(curBarTime == gLastBarTime)
+   {
+      if(InpShowPanel) DrawPanel(); // update P/L setiap tick
+      return;
+   }
    gLastBarTime = curBarTime;
 
-   // Cek posisi aktif
    if(HasActivePosition())
    {
-      // Max hold time check
-      if(gDir != 0 && gOpenTime > 0)
+      if(gDir!=0 && gOpenTime>0)
       {
-         int holdMin = (int)((TimeCurrent() - gOpenTime) / 60);
+         int holdMin = (int)((TimeCurrent()-gOpenTime)/60);
          if(holdMin >= InpMaxHoldMinutes)
          {
-            Print("Max hold time (", InpMaxHoldMinutes, " menit) tercapai. Menutup posisi.");
-            CloseMyPositions();
-            ResetTrade();
+            Print("Max hold time tercapai. Menutup posisi.");
+            CloseMyPositions(); ResetTrade();
          }
       }
+      if(InpShowPanel) DrawPanel();
       return;
    }
-   else if(gDir != 0)
-   {
-      // Posisi ditutup dari luar (SL hit, manual close)
-      ResetTrade();
-      return;
-   }
+   else if(gDir != 0) { ResetTrade(); }
 
-   // --- Cooldown setelah exit ---
    int currentBars = iBars(InpSymbol, PERIOD_M1);
-   if(gLastExitBar > 0 && (currentBars - 1) - gLastExitBar < InpCooldownBars) return;
+   if(gLastExitBar>0 && (currentBars-1)-gLastExitBar < InpCooldownBars)
+   {
+      gPanelStatus = "COOLDOWN";
+      if(InpShowPanel) DrawPanel();
+      return;
+   }
 
-   // --- Session filter WIB ---
-   if(!InWIBSession()) return;
+   gSessionOK = InWIBSession();
+   if(!gSessionOK)
+   {
+      gPanelStatus = "SESSION OFF";
+      if(InpShowPanel) DrawPanel();
+      return;
+   }
 
-   // --- Baca bar terakhir yang sudah close (shift=1, sama dengan Pine Script) ---
+   CheckSignal(currentBars);
+   if(InpShowPanel) DrawPanel();
+}
+
+//+------------------------------------------------------------------+
+// SIGNAL DETECTION (logika identik Pine Script)
+//+------------------------------------------------------------------+
+void CheckSignal(int currentBars)
+{
    MqlRates bar[];
    ArraySetAsSeries(bar, true);
    if(CopyRates(InpSymbol, PERIOD_M1, 1, 3, bar) < 3) return;
 
-   double open1  = bar[0].open;
-   double high1  = bar[0].high;
-   double low1   = bar[0].low;
-   double close1 = bar[0].close;
-   double close2 = bar[1].close; // bar sebelumnya (untuk break detection)
-   double high2  = bar[1].high;  // untuk sellBreak: close < low[1]
-   double low2   = bar[1].low;   // untuk buyBreak: close > high[1]
+   double open1  = bar[0].open,  high1  = bar[0].high;
+   double low1   = bar[0].low,   close1 = bar[0].close;
+   double close2 = bar[1].close, high2  = bar[1].high, low2 = bar[1].low;
 
-   // --- EMA M1 ---
-   double emaFast = Buf(hEmaFast, 0, 1);
-   double emaMid  = Buf(hEmaMid,  0, 1);
-   double emaSlow = Buf(hEmaSlow, 0, 1);
-   double emaSlowOld = Buf(hEmaSlow, 0, 1 + InpEma200SlopeBars); // untuk slope EMA200
+   double emaFast   = Buf(hEmaFast, 0, 1);
+   double emaMid    = Buf(hEmaMid,  0, 1);
+   double emaSlow   = Buf(hEmaSlow, 0, 1);
+   double emaSlowOld= Buf(hEmaSlow, 0, 1+InpEma200SlopeBars);
 
-   // --- MTF EMA ---
-   // M5: close dan EMA50
-   double m5Close  = iClose(InpSymbol, PERIOD_M5, 1);
-   double m5Ema50  = Buf(hEmaM5Fast, 0, 1);
+   double m5Close   = iClose(InpSymbol, PERIOD_M5,  1);
+   double m5Ema50   = Buf(hEmaM5Fast, 0, 1);
+   double m15Close  = iClose(InpSymbol, PERIOD_M15, 1);
+   double m15Ema50  = Buf(hEmaM15Fast, 0, 1);
+   double m15Ema50_3= Buf(hEmaM15Fast, 0, 4);
+   double m15Slope  = m15Ema50 - m15Ema50_3;
 
-   // M15: close, EMA50 dan EMA50 3-bar lalu (untuk slope)
-   double m15Close   = iClose(InpSymbol, PERIOD_M15, 1);
-   double m15Ema50   = Buf(hEmaM15Fast, 0, 1);
-   double m15Ema50_3 = Buf(hEmaM15Fast, 0, 4); // [3] bars lalu di M15
-   double m15Slope   = m15Ema50 - m15Ema50_3;
-
-   // --- RSI, ADX, ATR, BB ---
    double rsiVal  = Buf(hRsi, 0, 1);
    double rsiPrev = Buf(hRsi, 0, 2);
-   double adxVal  = Buf(hAdx, 0, 1); // ADX main line
+   double adxVal  = Buf(hAdx, 0, 1);
    double atrVal  = Buf(hAtr, 0, 1);
-   double bbUpper = Buf(hBB,  1, 1); // upper band
-   double bbLower = Buf(hBB,  2, 1); // lower band
+   double bbUpper = Buf(hBB,  1, 1);
+   double bbLower = Buf(hBB,  2, 1);
 
-   if(atrVal <= 0 || emaFast <= 0) return;
+   if(atrVal<=0 || emaFast<=0) return;
 
-   // --- Candle properties ---
-   double body       = MathAbs(close1 - open1);
-   double candleRange= high1 - low1;
-   double bodyRatio  = candleRange > 0 ? body / candleRange : 0.0;
-   double closePos   = candleRange > 0 ? (close1 - low1) / candleRange : 0.5;
+   // Store for panel
+   gRsiVal = rsiVal; gAdxVal = adxVal; gAtrVal = atrVal;
 
-   bool bullCandle = close1 > open1 && closePos >= InpCloseEdge;
-   bool bearCandle = close1 < open1 && closePos <= 1.0 - InpCloseEdge;
-   bool bodyOK     = bodyRatio >= InpMinBodyRatio;
-   bool antiSpike  = candleRange <= atrVal * InpMaxCandleATR;
-   bool atrOK      = atrVal >= InpMinATRPrice && atrVal <= InpMaxATRPrice;
+   // Candle
+   double body       = MathAbs(close1-open1);
+   double candleRange= high1-low1;
+   double bodyRatio  = candleRange>0 ? body/candleRange : 0.0;
+   double closePos   = candleRange>0 ? (close1-low1)/candleRange : 0.5;
+   bool bullCandle = close1>open1 && closePos>=InpCloseEdge;
+   bool bearCandle = close1<open1 && closePos<=1.0-InpCloseEdge;
+   bool bodyOK     = bodyRatio>=InpMinBodyRatio;
+   bool antiSpike  = candleRange<=atrVal*InpMaxCandleATR;
+   bool atrOK      = atrVal>=InpMinATRPrice && atrVal<=InpMaxATRPrice;
+   double wickBuy  = MathMin(open1,close1)-low1;
+   double wickSell = high1-MathMax(open1,close1);
+   bool wickBuyOK  = candleRange>0 ? wickBuy/candleRange>=0.32 : false;
+   bool wickSellOK = candleRange>0 ? wickSell/candleRange>=0.32 : false;
 
-   // Wick ratio
-   double wickBuy  = MathMin(open1, close1) - low1;
-   double wickSell = high1 - MathMax(open1, close1);
-   bool wickBuyOK  = candleRange > 0 ? wickBuy  / candleRange >= 0.32 : false;
-   bool wickSellOK = candleRange > 0 ? wickSell / candleRange >= 0.32 : false;
+   // MTF Trend
+   gM1Bull = emaFast>emaMid && close1>emaMid;
+   gM1Bear = emaFast<emaMid && close1<emaMid;
+   gM5Bull = m5Close>m5Ema50;
+   gM5Bear = m5Close<m5Ema50;
+   gM15Bull= m15Close>m15Ema50 && m15Slope>=0;
+   gM15Bear= m15Close<m15Ema50 && m15Slope<=0;
+   gBullCount = (gM1Bull?1:0)+(gM5Bull?1:0)+(gM15Bull?1:0);
+   gBearCount = (gM1Bear?1:0)+(gM5Bear?1:0)+(gM15Bear?1:0);
+   bool trendBuyOK  = gBullCount>=2;
+   bool trendSellOK = gBearCount>=2;
 
-   // --- MTF Trend (sama dengan Pine Script) ---
-   bool m1Bull = emaFast > emaMid && close1 > emaMid;
-   bool m1Bear = emaFast < emaMid && close1 < emaMid;
-   bool m5Bull = m5Close > m5Ema50;
-   bool m5Bear = m5Close < m5Ema50;
-   bool m15Bull= m15Close > m15Ema50 && m15Slope >= 0;
-   bool m15Bear= m15Close < m15Ema50 && m15Slope <= 0;
+   double emaGapATR = atrVal>0 ? MathAbs(emaMid-emaSlow)/atrVal : 999.0;
+   gSidewaysFlag = gBullCount<2 && gBearCount<2 && adxVal<=InpSideMaxADX && emaGapATR<=1.60;
 
-   int bullCount = (m1Bull?1:0) + (m5Bull?1:0) + (m15Bull?1:0);
-   int bearCount = (m1Bear?1:0) + (m5Bear?1:0) + (m15Bear?1:0);
-
-   bool trendBuyOK  = bullCount >= 2;
-   bool trendSellOK = bearCount >= 2;
-
-   // --- Sideways ---
-   double emaGapATR = atrVal > 0 ? MathAbs(emaMid - emaSlow) / atrVal : 999.0;
-   bool sideways = bullCount < 2 && bearCount < 2 && adxVal <= InpSideMaxADX && emaGapATR <= 1.60;
-
-   // --- RSI ---
-   bool rsiBuyTurn  = rsiVal > rsiPrev;
-   bool rsiSellTurn = rsiVal < rsiPrev;
+   // RSI
+   bool rsiBuyTurn  = rsiVal>rsiPrev;
+   bool rsiSellTurn = rsiVal<rsiPrev;
    bool rsiBuyOK, rsiSellOK;
-   if(InpEntryMode == "SAFE")
-      { rsiBuyOK = rsiVal>=38 && rsiVal<=62; rsiSellOK = rsiVal>=38 && rsiVal<=62; }
-   else if(InpEntryMode == "BALANCED")
-      { rsiBuyOK = rsiVal>=34 && rsiVal<=68; rsiSellOK = rsiVal>=32 && rsiVal<=66; }
-   else // AGGRESSIVE
-      { rsiBuyOK = rsiVal>=30 && rsiVal<=72; rsiSellOK = rsiVal>=28 && rsiVal<=70; }
+   if(InpEntryMode=="SAFE")         { rsiBuyOK=rsiVal>=38&&rsiVal<=62; rsiSellOK=rsiVal>=38&&rsiVal<=62; }
+   else if(InpEntryMode=="BALANCED"){ rsiBuyOK=rsiVal>=34&&rsiVal<=68; rsiSellOK=rsiVal>=32&&rsiVal<=66; }
+   else                              { rsiBuyOK=rsiVal>=30&&rsiVal<=72; rsiSellOK=rsiVal>=28&&rsiVal<=70; }
 
-   // ==================== SR LEVELS ====================
+   // SR
    UpdateSRLevels(atrVal);
+   double srBuffer    = atrVal*InpSRBufferATR;
+   bool nearSupport   = gSupLevel>0 && low1<=gSupLevel+srBuffer && close1>=gSupLevel1-srBuffer;
+   bool nearResistance= gResLevel>0 && high1>=gResLevel-srBuffer && close1<=gResLevel1+srBuffer;
+   bool aboveResistance= gResLevel1>0 && close1>gResLevel1;
+   bool belowSupport  = gSupLevel1>0 && close1<gSupLevel1;
 
-   double srBuffer = atrVal * InpSRBufferATR;
+   bool brekoutRes = gResLevel1>0 && close2<=gResLevel1 && close1>gResLevel1;
+   bool brekoutSup = gSupLevel1>0 && close2>=gSupLevel1 && close1<gSupLevel1;
+   bool resHolds   = gResLevel>0 && high1>=gResLevel-srBuffer && close1<=gResLevel;
+   bool supHolds   = gSupLevel>0 && low1<=gSupLevel+srBuffer  && close1>=gSupLevel;
 
-   // Near support / resistance (sama dengan Pine Script)
-   bool nearSupport    = gSupLevel>0 && low1 <= gSupLevel + srBuffer && close1 >= gSupLevel1 - srBuffer;
-   bool nearResistance = gResLevel>0 && high1>= gResLevel - srBuffer && close1 <= gResLevel1 + srBuffer;
-   bool aboveResistance= gResLevel1>0 && close1 > gResLevel1;
-   bool belowSupport   = gSupLevel1>0 && close1 < gSupLevel1;
+   if(brekoutRes) { gResIsSup=true;  gBreakResHigh=gResLevel1; gBreakResBar=currentBars-1; }
+   else if(resHolds) gResIsSup=false;
+   if(brekoutSup) { gSupIsRes=true;  gBreakSupLow=gSupLevel1;  gBreakSupBar=currentBars-1; }
+   else if(supHolds) gSupIsRes=false;
 
-   // Breakout detection (crossover/crossunder equivalen)
-   bool brekoutRes = gResLevel1>0 && close2 <= gResLevel1 && close1 > gResLevel1;
-   bool brekoutSup = gSupLevel1>0 && close2 >= gSupLevel1 && close1 < gSupLevel1;
-   bool resHolds   = gResLevel>0 && high1 >= gResLevel - srBuffer && close1 <= gResLevel;
-   bool supHolds   = gSupLevel>0 && low1  <= gSupLevel + srBuffer && close1 >= gSupLevel;
-
-   // Update persistent SR state
-   if(brekoutRes) { gResIsSup = true;  gBreakResHigh = gResLevel1; gBreakResBar = currentBars-1; }
-   else if(resHolds) gResIsSup = false;
-   if(brekoutSup) { gSupIsRes = true;  gBreakSupLow  = gSupLevel1; gBreakSupBar = currentBars-1; }
-   else if(supHolds) gSupIsRes = false;
-
-   // Green/Red diamond (SR Strength visual)
-   bool greenSupportHold  = supHolds;
-   bool greenResAsSupport = brekoutRes && gResIsSup;
-   bool redResistanceHold = resHolds;
+   bool greenSupportHold = supHolds;
+   bool greenResAsSupport= brekoutRes && gResIsSup;
+   bool redResistanceHold= resHolds;
    bool redSupAsResistance= brekoutSup && gSupIsRes;
-
    bool greenDiamond = greenSupportHold || greenResAsSupport;
    bool redDiamond   = redResistanceHold || redSupAsResistance;
 
-   // Retest detection
    bool resRetestBuy =
-      gBreakResBar > 0 &&
-      (currentBars-1) > gBreakResBar &&
-      (currentBars-1) - gBreakResBar <= InpSRRetestBars &&
-      gBreakResHigh > 0 &&
-      low1 <= gBreakResHigh + srBuffer &&
-      close1 >= gBreakResHigh &&
+      gBreakResBar>0 && (currentBars-1)>gBreakResBar &&
+      (currentBars-1)-gBreakResBar<=InpSRRetestBars && gBreakResHigh>0 &&
+      low1<=gBreakResHigh+srBuffer && close1>=gBreakResHigh &&
       bullCandle && rsiBuyTurn;
 
    bool supRetestSell =
-      gBreakSupBar > 0 &&
-      (currentBars-1) > gBreakSupBar &&
-      (currentBars-1) - gBreakSupBar <= InpSRRetestBars &&
-      gBreakSupLow > 0 &&
-      high1 >= gBreakSupLow - srBuffer &&
-      close1 <= gBreakSupLow &&
+      gBreakSupBar>0 && (currentBars-1)>gBreakSupBar &&
+      (currentBars-1)-gBreakSupBar<=InpSRRetestBars && gBreakSupLow>0 &&
+      high1>=gBreakSupLow-srBuffer && close1<=gBreakSupLow &&
       bearCandle && rsiSellTurn;
 
-   // --- SR Boost / Block ---
    bool srBuyDanger  = nearResistance && !aboveResistance && !brekoutRes;
    bool srSellDanger = nearSupport    && !belowSupport    && !brekoutSup;
-   bool srBlockBuy   = InpSRBoostBlock && srBuyDanger;
-   bool srBlockSell  = InpSRBoostBlock && srSellDanger;
+   gSRBlockBuy  = InpSRBoostBlock && srBuyDanger;
+   gSRBlockSell = InpSRBoostBlock && srSellDanger;
 
-   int srBuyBoost = 0, srSellBoost = 0;
+   int srBuyBoost=0, srSellBoost=0;
    if(InpSRBoostBlock)
    {
-      srBuyBoost  += nearSupport    ? InpSRBoostPts : 0;
-      srBuyBoost  += brekoutRes     ? InpSRBreakBoostPts : 0;
-      srBuyBoost  += (gResIsSup && close1 > gResLevel) ? InpSRBoostPts : 0;
-      srBuyBoost  -= srBuyDanger    ? InpSRDangerPenalty : 0;
-      srBuyBoost  += resRetestBuy   ? InpRetestBoostPts : 0;
-
-      srSellBoost += nearResistance ? InpSRBoostPts : 0;
-      srSellBoost += brekoutSup     ? InpSRBreakBoostPts : 0;
-      srSellBoost += (gSupIsRes && close1 < gSupLevel) ? InpSRBoostPts : 0;
-      srSellBoost -= srSellDanger   ? InpSRDangerPenalty : 0;
-      srSellBoost += supRetestSell  ? InpRetestBoostPts : 0;
+      srBuyBoost  += nearSupport    ?InpSRBoostPts:0;
+      srBuyBoost  += brekoutRes     ?InpSRBreakBoostPts:0;
+      srBuyBoost  += (gResIsSup&&close1>gResLevel)?InpSRBoostPts:0;
+      srBuyBoost  -= srBuyDanger    ?InpSRDangerPenalty:0;
+      srBuyBoost  += resRetestBuy   ?InpRetestBoostPts:0;
+      srSellBoost += nearResistance ?InpSRBoostPts:0;
+      srSellBoost += brekoutSup     ?InpSRBreakBoostPts:0;
+      srSellBoost += (gSupIsRes&&close1<gSupLevel)?InpSRBoostPts:0;
+      srSellBoost -= srSellDanger   ?InpSRDangerPenalty:0;
+      srSellBoost += supRetestSell  ?InpRetestBoostPts:0;
    }
 
-   // --- Precision SR Block ---
+   // SR text for panel
+   gSRStatus = brekoutRes ? "BREAK RESIST" : brekoutSup ? "BREAK SUPPORT" :
+               nearSupport ? "NEAR SUPPORT" : nearResistance ? "NEAR RESIST" :
+               resRetestBuy ? "RETEST BUY" : supRetestSell ? "RETEST SELL" : "NEUTRAL";
+
    double ema200Slope = emaSlow - emaSlowOld;
-   bool majorBear = close1 < emaSlow && ema200Slope < 0 && bearCount >= 2;
-   bool majorBull = close1 > emaSlow && ema200Slope > 0 && bullCount >= 2;
+   bool majorBear = close1<emaSlow && ema200Slope<0 && gBearCount>=2;
+   bool majorBull = close1>emaSlow && ema200Slope>0 && gBullCount>=2;
 
-   bool buyReversalOK  = brekoutRes || resRetestBuy  || (nearSupport    && bullCandle && rsiBuyTurn  && close1 > emaFast);
-   bool sellReversalOK = brekoutSup || supRetestSell || (nearResistance && bearCandle && rsiSellTurn && close1 < emaFast);
+   bool buyReversalOK  = brekoutRes||resRetestBuy||(nearSupport&&bullCandle&&rsiBuyTurn&&close1>emaFast);
+   bool sellReversalOK = brekoutSup||supRetestSell||(nearResistance&&bearCandle&&rsiSellTurn&&close1<emaFast);
 
-   bool redBoxBuyBlock    = InpBlockBuyAtRedBox     && nearResistance && !aboveResistance && !brekoutRes && !resRetestBuy;
-   bool greenBoxSellBlock = InpBlockSellAtGreenBox  && nearSupport    && !belowSupport    && !brekoutSup && !supRetestSell;
+   bool redBoxBuyBlock    = InpBlockBuyAtRedBox    &&nearResistance&&!aboveResistance&&!brekoutRes&&!resRetestBuy;
+   bool greenBoxSellBlock = InpBlockSellAtGreenBox &&nearSupport   &&!belowSupport   &&!brekoutSup&&!supRetestSell;
+   bool buyPrecisionOK    = !InpRequireBreakForReversal||!majorBear||buyReversalOK;
+   bool sellPrecisionOK   = !InpRequireBreakForReversal||!majorBull||sellReversalOK;
+   gPrecBlockBuy  = redBoxBuyBlock   ||!buyPrecisionOK;
+   gPrecBlockSell = greenBoxSellBlock||!sellPrecisionOK;
 
-   bool buyPrecisionOK  = !InpRequireBreakForReversal || !majorBear || buyReversalOK;
-   bool sellPrecisionOK = !InpRequireBreakForReversal || !majorBull || sellReversalOK;
+   // Entry setups
+   bool buyTrend  = trendBuyOK &&close1>emaMid &&rsiBuyOK &&rsiBuyTurn &&bullCandle&&bodyOK&&antiSpike&&atrOK;
+   bool sellTrend = trendSellOK&&close1<emaMid &&rsiSellOK&&rsiSellTurn&&bearCandle&&bodyOK&&antiSpike&&atrOK;
+   bool buyBreak  = trendBuyOK &&close1>high2  &&close1>emaFast&&rsiVal>50&&rsiVal<72&&bullCandle&&antiSpike&&atrOK;
+   bool sellBreak = trendSellOK&&close1<low2   &&close1<emaFast&&rsiVal<50&&rsiVal>28&&bearCandle&&antiSpike&&atrOK;
+   bool sideBuy   = gSidewaysFlag&&low1<=bbLower&&close1>bbLower&&rsiVal<=45&&rsiBuyTurn &&wickBuyOK &&antiSpike&&atrOK;
+   bool sideSell  = gSidewaysFlag&&high1>=bbUpper&&close1<bbUpper&&rsiVal>=55&&rsiSellTurn&&wickSellOK&&antiSpike&&atrOK;
 
-   bool precisionBlockBuy  = redBoxBuyBlock   || !buyPrecisionOK;
-   bool precisionBlockSell = greenBoxSellBlock || !sellPrecisionOK;
+   // Score
+   int buyScoreRaw  = (gBullCount*18)+(close1>emaMid?12:0)+(close1>emaFast?8:0)+(rsiBuyTurn?10:0)+(rsiBuyOK?10:0)+(bullCandle?10:0)+(bodyOK?5:0)+(antiSpike?5:0)+(atrOK?5:0)+(sideBuy?20:0);
+   int sellScoreRaw = (gBearCount*18)+(close1<emaMid?12:0)+(close1<emaFast?8:0)+(rsiSellTurn?10:0)+(rsiSellOK?10:0)+(bearCandle?10:0)+(bodyOK?5:0)+(antiSpike?5:0)+(atrOK?5:0)+(sideSell?20:0);
+   gBuyScore  = MathMax(0, buyScoreRaw +srBuyBoost -(gPrecBlockBuy ?InpSRDangerPenalty:0));
+   gSellScore = MathMax(0, sellScoreRaw+srSellBoost-(gPrecBlockSell?InpSRDangerPenalty:0));
 
-   // ==================== ENTRY SETUPS (sama dengan Pine Script) ====================
-   bool buyTrend  = trendBuyOK  && close1 > emaMid  && rsiBuyOK  && rsiBuyTurn  && bullCandle && bodyOK && antiSpike && atrOK;
-   bool sellTrend = trendSellOK && close1 < emaMid  && rsiSellOK && rsiSellTurn && bearCandle && bodyOK && antiSpike && atrOK;
+   gMinQuality = (InpEntryMode=="SAFE")?InpMinQualitySafe:(InpEntryMode=="BALANCED")?InpMinQualityBal:InpMinQualityAgg;
 
-   bool buyBreak  = trendBuyOK  && close1 > high2 && close1 > emaFast && rsiVal > 50 && rsiVal < 72 && bullCandle && antiSpike && atrOK;
-   bool sellBreak = trendSellOK && close1 < low2  && close1 < emaFast && rsiVal < 50 && rsiVal > 28 && bearCandle && antiSpike && atrOK;
+   bool allowBuy  = InpModeSignal!="SELL ONLY";
+   bool allowSell = InpModeSignal!="BUY ONLY";
 
-   bool sideBuy  = sideways && low1  <= bbLower && close1 > bbLower && rsiVal <= 45 && rsiBuyTurn  && wickBuyOK  && antiSpike && atrOK;
-   bool sideSell = sideways && high1 >= bbUpper && close1 < bbUpper && rsiVal >= 55 && rsiSellTurn && wickSellOK && antiSpike && atrOK;
+   bool buySetup  = (buyTrend||buyBreak||sideBuy||resRetestBuy) &&!gSRBlockBuy &&!gPrecBlockBuy;
+   bool sellSetup = (sellTrend||sellBreak||sideSell||supRetestSell)&&!gSRBlockSell&&!gPrecBlockSell;
+   bool buyValid  = allowBuy &&buySetup &&gBuyScore>=gMinQuality&&gBuyScore>=gSellScore+InpScoreGap;
+   bool sellValid = allowSell&&sellSetup&&gSellScore>=gMinQuality&&gSellScore>=gBuyScore+InpScoreGap;
 
-   // ==================== SCORE SYSTEM (identik Pine Script) ====================
-   int buyScoreRaw =
-      (bullCount * 18) +
-      (close1 > emaMid  ? 12 : 0) +
-      (close1 > emaFast ?  8 : 0) +
-      (rsiBuyTurn       ? 10 : 0) +
-      (rsiBuyOK         ? 10 : 0) +
-      (bullCandle       ? 10 : 0) +
-      (bodyOK           ?  5 : 0) +
-      (antiSpike        ?  5 : 0) +
-      (atrOK            ?  5 : 0) +
-      (sideBuy          ? 20 : 0);
+   // SR Strength
+   bool buyStrongSR  = InpUseSRStrength&&greenDiamond&&(trendBuyOK||gBullCount>=2||resRetestBuy)&&gBuyScore>=InpSRStrongMinScore&&gBuyScore>=gSellScore+InpSRStrongGap&&!gSRBlockBuy&&!gPrecBlockBuy;
+   bool sellStrongSR = InpUseSRStrength&&redDiamond&&(trendSellOK||gBearCount>=2||supRetestSell)&&gSellScore>=InpSRStrongMinScore&&gSellScore>=gBuyScore+InpSRStrongGap&&!gSRBlockSell&&!gPrecBlockSell;
+   bool buyMediumSR  = InpAllowSRMedium&&greenDiamond&&!buyStrongSR&&gBuyScore>=InpSRMediumMinScore&&gBuyScore>=gSellScore+InpSRMediumGap&&!gSRBlockBuy&&!gPrecBlockBuy;
+   bool sellMediumSR = InpAllowSRMedium&&redDiamond&&!sellStrongSR&&gSellScore>=InpSRMediumMinScore&&gSellScore>=gBuyScore+InpSRMediumGap&&!gSRBlockSell&&!gPrecBlockSell;
 
-   int sellScoreRaw =
-      (bearCount * 18) +
-      (close1 < emaMid  ? 12 : 0) +
-      (close1 < emaFast ?  8 : 0) +
-      (rsiSellTurn      ? 10 : 0) +
-      (rsiSellOK        ? 10 : 0) +
-      (bearCandle       ? 10 : 0) +
-      (bodyOK           ?  5 : 0) +
-      (antiSpike        ?  5 : 0) +
-      (atrOK            ?  5 : 0) +
-      (sideSell         ? 20 : 0);
+   bool doSRBuy  = allowBuy &&(buyStrongSR||buyMediumSR) &&(!(sellStrongSR||sellMediumSR)||gBuyScore>=gSellScore+InpScoreGap);
+   bool doSRSell = allowSell&&(sellStrongSR||sellMediumSR)&&(!(buyStrongSR||buyMediumSR) ||gSellScore>=gBuyScore+InpScoreGap);
 
-   int buyScore  = MathMax(0, buyScoreRaw  + srBuyBoost  - (precisionBlockBuy  ? InpSRDangerPenalty : 0));
-   int sellScore = MathMax(0, sellScoreRaw + srSellBoost - (precisionBlockSell ? InpSRDangerPenalty : 0));
+   // Final signal
+   int    finalDir=0;
+   double finalTP1Pts=0,finalTP2Pts=0,finalTP3Pts=0,finalSLPts=0;
+   string setupClass="";
 
-   // Min quality berdasarkan entryMode
-   int minQuality = (InpEntryMode=="SAFE") ? InpMinQualitySafe : (InpEntryMode=="BALANCED") ? InpMinQualityBal : InpMinQualityAgg;
-
-   bool allowBuy  = InpModeSignal != "SELL ONLY";
-   bool allowSell = InpModeSignal != "BUY ONLY";
-
-   bool buySetup  = (buyTrend  || buyBreak  || sideBuy  || resRetestBuy)  && !srBlockBuy  && !precisionBlockBuy;
-   bool sellSetup = (sellTrend || sellBreak || sideSell || supRetestSell) && !srBlockSell && !precisionBlockSell;
-
-   bool buyValid  = allowBuy  && buySetup  && buyScore  >= minQuality && buyScore  >= sellScore + InpScoreGap;
-   bool sellValid = allowSell && sellSetup && sellScore >= minQuality && sellScore >= buyScore  + InpScoreGap;
-
-   // ==================== SR STRENGTH SETUP ====================
-   bool buyStrongSR  = InpUseSRStrength && greenDiamond &&
-      (trendBuyOK || bullCount>=2 || resRetestBuy) &&
-      buyScore >= InpSRStrongMinScore && buyScore >= sellScore + InpSRStrongGap &&
-      !srBlockBuy && !precisionBlockBuy;
-
-   bool sellStrongSR = InpUseSRStrength && redDiamond &&
-      (trendSellOK || bearCount>=2 || supRetestSell) &&
-      sellScore >= InpSRStrongMinScore && sellScore >= buyScore + InpSRStrongGap &&
-      !srBlockSell && !precisionBlockSell;
-
-   bool buyMediumSR  = InpAllowSRMedium && greenDiamond && !buyStrongSR &&
-      buyScore >= InpSRMediumMinScore && buyScore >= sellScore + InpSRMediumGap &&
-      !srBlockBuy && !precisionBlockBuy;
-
-   bool sellMediumSR = InpAllowSRMedium && redDiamond && !sellStrongSR &&
-      sellScore >= InpSRMediumMinScore && sellScore >= buyScore + InpSRMediumGap &&
-      !srBlockSell && !precisionBlockSell;
-
-   bool doSRBuy  = allowBuy  && (buyStrongSR  || buyMediumSR)  && (!(sellStrongSR||sellMediumSR) || buyScore  >= sellScore + InpScoreGap);
-   bool doSRSell = allowSell && (sellStrongSR || sellMediumSR) && (!(buyStrongSR||buyMediumSR)   || sellScore >= buyScore  + InpScoreGap);
-
-   // ==================== FINAL SIGNAL DECISION ====================
-   // Prioritas: SR Strength > Normal (sama dengan Pine Script)
-   int    finalDir = 0;
-   double finalTP1Pts=0, finalTP2Pts=0, finalTP3Pts=0, finalSLPts=0;
-   string setupClass = "";
-
-   // --- SL calculation ---
-   double atrSLRaw  = atrVal / InpPointSize * InpATRSLMult;
-   double adaptiveSL= MathMin(MathMax(atrSLRaw, InpMinSLPoints), InpMaxSLPoints);
-   double normalSLPts = (InpSLMode=="ADAPTIVE") ? adaptiveSL : InpFixedSLPoints;
-
-   double srStrongSLRaw = atrVal / InpPointSize * InpSRStrongATRSLMult;
-   double srStrongSLPts = (InpSRStrongSLMode=="ADAPTIVE") ?
-      MathMin(MathMax(srStrongSLRaw, InpSRStrongMinSL), InpSRStrongMaxSL) : InpSRStrongFixedSL;
-
-   double srMediumSLRaw = atrVal / InpPointSize * InpSRMediumATRSLMult;
-   double srMediumSLPts = (InpSRMediumSLMode=="ADAPTIVE") ?
-      MathMin(MathMax(srMediumSLRaw, InpSRMediumMinSL), InpSRMediumMaxSL) : InpSRMediumFixedSL;
+   double atrSLRaw    = atrVal/InpPointSize*InpATRSLMult;
+   double normalSLPts = (InpSLMode=="ADAPTIVE")?MathMin(MathMax(atrSLRaw,InpMinSLPoints),InpMaxSLPoints):InpFixedSLPoints;
+   double srStrongSLPts=(InpSRStrongSLMode=="ADAPTIVE")?MathMin(MathMax(atrVal/InpPointSize*InpSRStrongATRSLMult,InpSRStrongMinSL),InpSRStrongMaxSL):InpSRStrongFixedSL;
+   double srMediumSLPts=(InpSRMediumSLMode=="ADAPTIVE")?MathMin(MathMax(atrVal/InpPointSize*InpSRMediumATRSLMult,InpSRMediumMinSL),InpSRMediumMaxSL):InpSRMediumFixedSL;
 
    if(doSRBuy)
    {
-      finalDir = 1;
-      if(buyStrongSR) { finalTP1Pts=InpSRStrongTP1Pts; finalTP2Pts=InpSRStrongTP2Pts; finalTP3Pts=InpSRStrongTP3Pts; finalSLPts=srStrongSLPts; setupClass="BUY_KUAT_SR"; }
-      else            { finalTP1Pts=InpSRMediumTP1Pts; finalTP2Pts=InpSRMediumTP2Pts; finalTP3Pts=InpSRMediumTP3Pts; finalSLPts=srMediumSLPts; setupClass="BUY_SEDANG_SR"; }
+      finalDir=1;
+      if(buyStrongSR){finalTP1Pts=InpSRStrongTP1Pts;finalTP2Pts=InpSRStrongTP2Pts;finalTP3Pts=InpSRStrongTP3Pts;finalSLPts=srStrongSLPts;setupClass="BUY_KUAT_SR";}
+      else           {finalTP1Pts=InpSRMediumTP1Pts;finalTP2Pts=InpSRMediumTP2Pts;finalTP3Pts=InpSRMediumTP3Pts;finalSLPts=srMediumSLPts;setupClass="BUY_SEDANG_SR";}
    }
    else if(doSRSell)
    {
-      finalDir = -1;
-      if(sellStrongSR) { finalTP1Pts=InpSRStrongTP1Pts; finalTP2Pts=InpSRStrongTP2Pts; finalTP3Pts=InpSRStrongTP3Pts; finalSLPts=srStrongSLPts; setupClass="SELL_KUAT_SR"; }
-      else             { finalTP1Pts=InpSRMediumTP1Pts; finalTP2Pts=InpSRMediumTP2Pts; finalTP3Pts=InpSRMediumTP3Pts; finalSLPts=srMediumSLPts; setupClass="SELL_SEDANG_SR"; }
+      finalDir=-1;
+      if(sellStrongSR){finalTP1Pts=InpSRStrongTP1Pts;finalTP2Pts=InpSRStrongTP2Pts;finalTP3Pts=InpSRStrongTP3Pts;finalSLPts=srStrongSLPts;setupClass="SELL_KUAT_SR";}
+      else            {finalTP1Pts=InpSRMediumTP1Pts;finalTP2Pts=InpSRMediumTP2Pts;finalTP3Pts=InpSRMediumTP3Pts;finalSLPts=srMediumSLPts;setupClass="SELL_SEDANG_SR";}
    }
-   else if(buyValid)
+   else if(buyValid)  { finalDir=1;  finalTP1Pts=InpTP1Points;finalTP2Pts=InpTP2Points;finalTP3Pts=InpTP3Points;finalSLPts=normalSLPts;setupClass="BUY_NORMAL"; }
+   else if(sellValid) { finalDir=-1; finalTP1Pts=InpTP1Points;finalTP2Pts=InpTP2Points;finalTP3Pts=InpTP3Points;finalSLPts=normalSLPts;setupClass="SELL_NORMAL"; }
+
+   // Update panel predict text even if no signal fires
+   if(finalDir==0)
    {
-      finalDir=1;  finalTP1Pts=InpTP1Points; finalTP2Pts=InpTP2Points; finalTP3Pts=InpTP3Points; finalSLPts=normalSLPts; setupClass="BUY_NORMAL";
-   }
-   else if(sellValid)
-   {
-      finalDir=-1; finalTP1Pts=InpTP1Points; finalTP2Pts=InpTP2Points; finalTP3Pts=InpTP3Points; finalSLPts=normalSLPts; setupClass="SELL_NORMAL";
+      if(gBuyScore>=gSellScore+2) gPanelStatus="PREDICT BUY";
+      else if(gSellScore>=gBuyScore+2) gPanelStatus="PREDICT SELL";
+      else gPanelStatus="WAIT";
+      gPanelSetup = "-";
+      return;
    }
 
-   if(finalDir == 0) return; // No signal
-
-   // ==================== EKSEKUSI ORDER ====================
-   // Pine Script: entry = open (bar berikutnya setelah sinyal)
-   // MT5: bar baru sudah dibuka, kita masuk sekarang di harga market
+   // Execute
    int digits = (int)SymbolInfoInteger(InpSymbol, SYMBOL_DIGITS);
-   double slPrice  = finalSLPts  * InpPointSize;
-   double tp1Price = finalTP1Pts * InpPointSize;
-   double tp2Price = finalTP2Pts * InpPointSize;
-   double tp3Price = finalTP3Pts * InpPointSize;
-
+   double slPrice=finalSLPts*InpPointSize, tp1Price=finalTP1Pts*InpPointSize;
+   double tp2Price=finalTP2Pts*InpPointSize, tp3Price=finalTP3Pts*InpPointSize;
    double entryPrice, sl, tp1, tp2, tp3;
-   bool ok = false;
-   int score = (finalDir==1) ? buyScore : sellScore;
+   bool ok=false;
+   int score=(finalDir==1)?gBuyScore:gSellScore;
 
-   if(finalDir == 1) // BUY
+   if(finalDir==1)
    {
-      entryPrice = SymbolInfoDouble(InpSymbol, SYMBOL_ASK);
-      sl  = NormalizeDouble(entryPrice - slPrice,  digits);
-      tp1 = NormalizeDouble(entryPrice + tp1Price, digits);
-      tp2 = NormalizeDouble(entryPrice + tp2Price, digits);
-      tp3 = NormalizeDouble(entryPrice + tp3Price, digits);
-
+      entryPrice=SymbolInfoDouble(InpSymbol,SYMBOL_ASK);
+      sl =NormalizeDouble(entryPrice-slPrice, digits);
+      tp1=NormalizeDouble(entryPrice+tp1Price,digits);
+      tp2=NormalizeDouble(entryPrice+tp2Price,digits);
+      tp3=NormalizeDouble(entryPrice+tp3Price,digits);
       if(InpDeleteOnNew) CloseMyPositions();
-
-      string cmt = StringFormat("ZS V10 %s s%d", setupClass, score);
-      if(StringLen(cmt) > 63) cmt = StringSubstr(cmt, 0, 63);
-      ok = trade.Buy(MathMin(InpLot, InpMaxLot), InpSymbol, entryPrice, sl, tp3, cmt);
+      string cmt=StringFormat("ZS V10 %s s%d",setupClass,score);
+      if(StringLen(cmt)>63) cmt=StringSubstr(cmt,0,63);
+      ok=trade.Buy(MathMin(InpLot,InpMaxLot),InpSymbol,entryPrice,sl,tp3,cmt);
    }
-   else // SELL
+   else
    {
-      entryPrice = SymbolInfoDouble(InpSymbol, SYMBOL_BID);
-      sl  = NormalizeDouble(entryPrice + slPrice,  digits);
-      tp1 = NormalizeDouble(entryPrice - tp1Price, digits);
-      tp2 = NormalizeDouble(entryPrice - tp2Price, digits);
-      tp3 = NormalizeDouble(entryPrice - tp3Price, digits);
-
+      entryPrice=SymbolInfoDouble(InpSymbol,SYMBOL_BID);
+      sl =NormalizeDouble(entryPrice+slPrice, digits);
+      tp1=NormalizeDouble(entryPrice-tp1Price,digits);
+      tp2=NormalizeDouble(entryPrice-tp2Price,digits);
+      tp3=NormalizeDouble(entryPrice-tp3Price,digits);
       if(InpDeleteOnNew) CloseMyPositions();
-
-      string cmt = StringFormat("ZS V10 %s s%d", setupClass, score);
-      if(StringLen(cmt) > 63) cmt = StringSubstr(cmt, 0, 63);
-      ok = trade.Sell(MathMin(InpLot, InpMaxLot), InpSymbol, entryPrice, sl, tp3, cmt);
+      string cmt=StringFormat("ZS V10 %s s%d",setupClass,score);
+      if(StringLen(cmt)>63) cmt=StringSubstr(cmt,0,63);
+      ok=trade.Sell(MathMin(InpLot,InpMaxLot),InpSymbol,entryPrice,sl,tp3,cmt);
    }
 
    if(ok)
    {
-      gEntry    = entryPrice;
-      gSL       = sl;
-      gTP1      = tp1;
-      gTP2      = tp2;
-      gTP3      = tp3;
-      gDir      = finalDir;
-      gHitTP1   = false;
-      gHitTP2   = false;
-      gOpenTime = TimeCurrent();
+      gEntry=entryPrice; gSL=sl; gTP1=tp1; gTP2=tp2; gTP3=tp3;
+      gDir=finalDir; gHitTP1=false; gHitTP2=false;
+      gOpenTime=TimeCurrent();
+      gTotalSignals++;
+      gLossCount++; // akan di-decrement jika win (TP3 hit)
+      gPanelStatus=(finalDir==1)?"BUY ACTIVE":"SELL ACTIVE";
+      gPanelSetup=setupClass;
+      Print(StringFormat(">>> %s | %s | Score=%d | Entry=%.2f | SL=%.2f | TP1=%.2f | TP2=%.2f | TP3=%.2f",
+            finalDir==1?"BUY":"SELL",setupClass,score,entryPrice,sl,tp1,tp2,tp3));
+   }
+   else
+      Print("Order GAGAL: ",trade.ResultRetcodeDescription()," (",trade.ResultRetcode(),")");
+}
 
-      Print(StringFormat(
-         ">>> TRADE %s | Setup=%s | Score=%d | Entry=%.2f | SL=%.2f | TP1=%.2f | TP2=%.2f | TP3=%.2f | bullC=%d bearC=%d | RSI=%.1f ADX=%.1f",
-         finalDir==1?"BUY":"SELL", setupClass, score,
-         entryPrice, sl, tp1, tp2, tp3,
-         bullCount, bearCount, rsiVal, adxVal));
+//==========================================================================
+//  PANEL FUNCTIONS
+//==========================================================================
+
+// Helper: buat/update 1 label teks di chart
+void PanelLabel(string name, string text, int x, int y, color clr, int fontSize=0)
+{
+   string fullName = PANEL_PREFIX + name;
+   int fs = fontSize>0 ? fontSize : InpPanelFontSize;
+   if(ObjectFind(0, fullName) < 0)
+   {
+      ObjectCreate(0, fullName, OBJ_LABEL, 0, 0, 0);
+      ObjectSetInteger(0, fullName, OBJPROP_CORNER,    CORNER_RIGHT_UPPER);
+      ObjectSetInteger(0, fullName, OBJPROP_ANCHOR,    ANCHOR_RIGHT_UPPER);
+      ObjectSetString (0, fullName, OBJPROP_FONT,      "Courier New");
+      ObjectSetInteger(0, fullName, OBJPROP_BACK,      false);
+      ObjectSetInteger(0, fullName, OBJPROP_SELECTABLE,false);
+   }
+   ObjectSetString (0, fullName, OBJPROP_TEXT,     text);
+   ObjectSetInteger(0, fullName, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, fullName, OBJPROP_YDISTANCE, y);
+   ObjectSetInteger(0, fullName, OBJPROP_COLOR,     clr);
+   ObjectSetInteger(0, fullName, OBJPROP_FONTSIZE,  fs);
+}
+
+// Helper: buat rectangle background
+void PanelRect(string name, int x, int y, int w, int h, color bgColor)
+{
+   string fullName = PANEL_PREFIX + name;
+   if(ObjectFind(0, fullName) < 0)
+   {
+      ObjectCreate(0, fullName, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+      ObjectSetInteger(0, fullName, OBJPROP_CORNER,    CORNER_RIGHT_UPPER);
+      ObjectSetInteger(0, fullName, OBJPROP_ANCHOR,    ANCHOR_RIGHT_UPPER);
+      ObjectSetInteger(0, fullName, OBJPROP_BACK,      true);
+      ObjectSetInteger(0, fullName, OBJPROP_SELECTABLE,false);
+      ObjectSetInteger(0, fullName, OBJPROP_BORDER_TYPE, BORDER_FLAT);
+   }
+   ObjectSetInteger(0, fullName, OBJPROP_XDISTANCE, x);
+   ObjectSetInteger(0, fullName, OBJPROP_YDISTANCE, y);
+   ObjectSetInteger(0, fullName, OBJPROP_XSIZE,     w);
+   ObjectSetInteger(0, fullName, OBJPROP_YSIZE,     h);
+   ObjectSetInteger(0, fullName, OBJPROP_BGCOLOR,   bgColor);
+   ObjectSetInteger(0, fullName, OBJPROP_BORDER_COLOR, C'50,50,50');
+}
+
+void PanelDelete()
+{
+   int total = ObjectsTotal(0, 0, -1);
+   for(int i = total-1; i >= 0; i--)
+   {
+      string name = ObjectName(0, i, 0, -1);
+      if(StringFind(name, PANEL_PREFIX) == 0)
+         ObjectDelete(0, name);
+   }
+}
+
+void PanelCreate()
+{
+   // Background utama
+   PanelRect("BG", InpPanelX, InpPanelY, 260, 460, C'15,15,25');
+   PanelRect("BG_TITLE", InpPanelX, InpPanelY, 260, 22, C'20,20,40');
+}
+
+//+------------------------------------------------------------------+
+// DRAW PANEL — dipanggil setiap tick
+//+------------------------------------------------------------------+
+void DrawPanel()
+{
+   if(!InpShowPanel) return;
+
+   int x  = InpPanelX;
+   int y0 = InpPanelY;
+   int lh = InpPanelFontSize + 5; // line height
+   int px = x + 4;                // padding kiri (dari kanan)
+   int fs = InpPanelFontSize;
+
+   // -- Status & warna --
+   color statusColor;
+   if(gPanelStatus=="BUY ACTIVE" || gPanelStatus=="PREDICT BUY")       statusColor=clrLime;
+   else if(gPanelStatus=="SELL ACTIVE" || gPanelStatus=="PREDICT SELL") statusColor=clrRed;
+   else if(gPanelStatus=="COOLDOWN")                                    statusColor=clrOrange;
+   else if(gPanelStatus=="SESSION OFF")                                 statusColor=clrGray;
+   else                                                                  statusColor=clrSilver;
+
+   // -- Resize background sesuai isi --
+   int totalRows = 32;
+   int bgH = totalRows * lh + 30;
+   PanelRect("BG",       x, y0,     260, bgH,  C'15,15,25');
+   PanelRect("BG_TITLE", x, y0,     260, lh+4, C'20,20,40');
+
+   int row = y0 + 4;
+
+   // JUDUL
+   PanelLabel("T1", "  ZS V10 SR PRECISION EA", px, row, clrGold, fs);
+   row += lh + 4;
+
+   // Separator
+   PanelLabel("SEP1","────────────────────────", px, row, C'50,50,80', fs-1); row+=lh-2;
+
+   // STATUS
+   PanelLabel("L_STATUS", "STATUS    :", px, row, clrSilver, fs);
+   PanelLabel("V_STATUS",  " "+gPanelStatus, px - 130, row, statusColor, fs);
+   row += lh;
+
+   // SETUP
+   color setupCol = (StringFind(gPanelSetup,"BUY")>=0) ? clrLimeGreen : (StringFind(gPanelSetup,"SELL")>=0) ? clrTomato : clrSilver;
+   PanelLabel("L_SETUP",  "SETUP     :", px, row, clrSilver, fs);
+   PanelLabel("V_SETUP",   " "+gPanelSetup, px-130, row, setupCol, fs);
+   row += lh;
+
+   // Separator
+   PanelLabel("SEP2","────────────────────────", px, row, C'50,50,80', fs-1); row+=lh-2;
+
+   // SCORE
+   color buyScoreCol  = gBuyScore>=gMinQuality  ? clrLimeGreen : clrSilver;
+   color sellScoreCol = gSellScore>=gMinQuality ? clrTomato    : clrSilver;
+   PanelLabel("L_BS","BUY  SCORE:", px, row, clrSilver, fs);
+   PanelLabel("V_BS", StringFormat(" %d / %d", gBuyScore, gMinQuality), px-130, row, buyScoreCol, fs);
+   row+=lh;
+   PanelLabel("L_SS","SELL SCORE:", px, row, clrSilver, fs);
+   PanelLabel("V_SS", StringFormat(" %d / %d", gSellScore, gMinQuality), px-130, row, sellScoreCol, fs);
+   row+=lh;
+
+   // Separator
+   PanelLabel("SEP3","────────────────────────", px, row, C'50,50,80', fs-1); row+=lh-2;
+
+   // TREND MTF
+   PanelLabel("L_T","BULL/BEAR :", px, row, clrSilver, fs);
+   string bcText = StringFormat(" %dB / %dS", gBullCount, gBearCount);
+   color bcCol = (gBullCount>=2)?clrLimeGreen:(gBearCount>=2)?clrTomato:clrOrange;
+   PanelLabel("V_T", bcText, px-130, row, bcCol, fs);
+   row+=lh;
+
+   PanelLabel("L_M1","M1 EMA    :", px, row, clrSilver, fs);
+   string m1txt = gM1Bull?" BULL ▲":gM1Bear?" BEAR ▼":" MIXED";
+   color m1col  = gM1Bull?clrLimeGreen:gM1Bear?clrTomato:clrGray;
+   PanelLabel("V_M1", m1txt, px-130, row, m1col, fs); row+=lh;
+
+   PanelLabel("L_M5","M5 EMA    :", px, row, clrSilver, fs);
+   string m5txt = gM5Bull?" BULL ▲":gM5Bear?" BEAR ▼":" MIXED";
+   color m5col  = gM5Bull?clrLimeGreen:gM5Bear?clrTomato:clrGray;
+   PanelLabel("V_M5", m5txt, px-130, row, m5col, fs); row+=lh;
+
+   PanelLabel("L_M15","M15 EMA  :", px, row, clrSilver, fs);
+   string m15txt = gM15Bull?" BULL ▲":gM15Bear?" BEAR ▼":" MIXED";
+   color m15col  = gM15Bull?clrLimeGreen:gM15Bear?clrTomato:clrGray;
+   PanelLabel("V_M15", m15txt, px-130, row, m15col, fs); row+=lh;
+
+   string regimeText = (gBullCount>=2)?"BUY BIAS":(gBearCount>=2)?"SELL BIAS":gSidewaysFlag?"SIDEWAYS":"MIXED";
+   color regCol = (gBullCount>=2)?clrLimeGreen:(gBearCount>=2)?clrTomato:clrOrange;
+   PanelLabel("L_RG","REGIME    :", px, row, clrSilver, fs);
+   PanelLabel("V_RG"," "+regimeText, px-130, row, regCol, fs); row+=lh;
+
+   // Separator
+   PanelLabel("SEP4","────────────────────────", px, row, C'50,50,80', fs-1); row+=lh-2;
+
+   // RSI / ADX / ATR
+   color rsiCol = (gRsiVal>=40&&gRsiVal<=60)?clrSilver:(gRsiVal<40)?clrLimeGreen:clrTomato;
+   PanelLabel("L_RSI","RSI(14)   :", px, row, clrSilver, fs);
+   PanelLabel("V_RSI", StringFormat(" %.1f", gRsiVal), px-130, row, rsiCol, fs); row+=lh;
+
+   color adxCol = (gAdxVal>=25)?clrGold:clrSilver;
+   PanelLabel("L_ADX","ADX(14)   :", px, row, clrSilver, fs);
+   PanelLabel("V_ADX", StringFormat(" %.1f %s", gAdxVal, gAdxVal<=InpSideMaxADX?"[SIDE]":"[TREND]"), px-130, row, adxCol, fs); row+=lh;
+
+   PanelLabel("L_ATR","ATR(14)   :", px, row, clrSilver, fs);
+   PanelLabel("V_ATR", StringFormat(" %.2f", gAtrVal), px-130, row, clrSilver, fs); row+=lh;
+
+   // SR Status
+   PanelLabel("SEP5","────────────────────────", px, row, C'50,50,80', fs-1); row+=lh-2;
+   color srCol = (gSRStatus=="NEUTRAL")?clrSilver:(StringFind(gSRStatus,"BUY")>=0||StringFind(gSRStatus,"SUPPORT")>=0)?clrLimeGreen:clrTomato;
+   PanelLabel("L_SR","SR STATUS :", px, row, clrSilver, fs);
+   PanelLabel("V_SR"," "+gSRStatus, px-130, row, srCol, fs); row+=lh;
+
+   string blockTxt = (!gSRBlockBuy&&!gSRBlockSell&&!gPrecBlockBuy&&!gPrecBlockSell)?"OK":
+                     (gSRBlockBuy||gPrecBlockBuy)?"BLOCK BUY":"BLOCK SELL";
+   color blockCol  = (blockTxt=="OK")?clrLimeGreen:clrTomato;
+   PanelLabel("L_BL","SR BLOCK  :", px, row, clrSilver, fs);
+   PanelLabel("V_BL"," "+blockTxt, px-130, row, blockCol, fs); row+=lh;
+
+   string supTxt = gSupLevel>0?StringFormat(" %.2f",gSupLevel):" -";
+   string resTxt = gResLevel>0?StringFormat(" %.2f",gResLevel):" -";
+   PanelLabel("L_SUP","SUPPORT   :", px, row, clrSilver, fs);
+   PanelLabel("V_SUP", supTxt, px-130, row, clrLimeGreen, fs); row+=lh;
+   PanelLabel("L_RES","RESIST    :", px, row, clrSilver, fs);
+   PanelLabel("V_RES", resTxt, px-130, row, clrTomato, fs); row+=lh;
+
+   // Session
+   PanelLabel("SEP6","────────────────────────", px, row, C'50,50,80', fs-1); row+=lh-2;
+   PanelLabel("L_SES","SESSION   :", px, row, clrSilver, fs);
+   PanelLabel("V_SES", gSessionOK?" WIB ON ✓":" WIB OFF ✗", px-130, row, gSessionOK?clrLimeGreen:clrGray, fs); row+=lh;
+
+   // Trade info
+   PanelLabel("SEP7","────────────────────────", px, row, C'50,50,80', fs-1); row+=lh-2;
+
+   if(gDir!=0 && HasActivePosition())
+   {
+      // Hitung P/L saat ini
+      double pl=0;
+      for(int i=0;i<PositionsTotal();i++)
+      {
+         if(!posInfo.SelectByIndex(i)) continue;
+         if(posInfo.Magic()==InpMagicNumber&&posInfo.Symbol()==InpSymbol)
+            pl += posInfo.Profit()+posInfo.Swap();
+      }
+      double curPrice=(gDir==1)?SymbolInfoDouble(InpSymbol,SYMBOL_BID):SymbolInfoDouble(InpSymbol,SYMBOL_ASK);
+      color plCol = pl>=0?clrLimeGreen:clrTomato;
+      string plSign = pl>=0?"+":"";
+
+      PanelLabel("L_EN","ENTRY     :", px, row, clrSilver, fs);
+      PanelLabel("V_EN", StringFormat(" %.2f", gEntry), px-130, row, clrGold, fs); row+=lh;
+
+      PanelLabel("L_SL2","SL        :", px, row, clrSilver, fs);
+      PanelLabel("V_SL2", StringFormat(" %.2f", gSL), px-130, row, clrTomato, fs); row+=lh;
+
+      string tp1Mark = gHitTP1?" ✓":"";
+      string tp2Mark = gHitTP2?" ✓":"";
+      PanelLabel("L_T1","TP1       :", px, row, clrSilver, fs);
+      PanelLabel("V_T1", StringFormat(" %.2f%s", gTP1, tp1Mark), px-130, row, gHitTP1?clrGold:clrLimeGreen, fs); row+=lh;
+      PanelLabel("L_T2","TP2       :", px, row, clrSilver, fs);
+      PanelLabel("V_T2", StringFormat(" %.2f%s", gTP2, tp2Mark), px-130, row, gHitTP2?clrGold:clrLimeGreen, fs); row+=lh;
+      PanelLabel("L_T3","TP3       :", px, row, clrSilver, fs);
+      PanelLabel("V_T3", StringFormat(" %.2f", gTP3), px-130, row, clrLimeGreen, fs); row+=lh;
+
+      PanelLabel("L_NOW","PRICE NOW :", px, row, clrSilver, fs);
+      PanelLabel("V_NOW", StringFormat(" %.2f", curPrice), px-130, row, clrWhite, fs); row+=lh;
+
+      PanelLabel("L_PL","P / L     :", px, row, clrSilver, fs);
+      PanelLabel("V_PL", StringFormat(" %s%.2f $", plSign, pl), px-130, row, plCol, fs); row+=lh;
+
+      int holdMin=(int)((TimeCurrent()-gOpenTime)/60);
+      PanelLabel("L_HOLD","HOLD TIME :", px, row, clrSilver, fs);
+      PanelLabel("V_HOLD", StringFormat(" %d / %d min", holdMin, InpMaxHoldMinutes), px-130, row, holdMin>InpMaxHoldMinutes*0.8?clrOrange:clrSilver, fs); row+=lh;
    }
    else
    {
-      Print("Order GAGAL: ", trade.ResultRetcodeDescription(), " (", trade.ResultRetcode(), ")");
+      PanelLabel("L_EN", "NO ACTIVE TRADE", px, row, C'70,70,90', fs); row+=lh;
+      PanelLabel("V_EN","", px-130, row, clrNONE, fs);
+      PanelLabel("L_SL2","", px, row, clrNONE, fs); PanelLabel("V_SL2","", px-130, row, clrNONE, fs); row+=lh;
+      PanelLabel("L_T1","", px, row, clrNONE, fs); PanelLabel("V_T1","", px-130, row, clrNONE, fs); row+=lh;
+      PanelLabel("L_T2","", px, row, clrNONE, fs); PanelLabel("V_T2","", px-130, row, clrNONE, fs); row+=lh;
+      PanelLabel("L_T3","", px, row, clrNONE, fs); PanelLabel("V_T3","", px-130, row, clrNONE, fs); row+=lh;
+      PanelLabel("L_NOW","", px, row, clrNONE, fs); PanelLabel("V_NOW","", px-130, row, clrNONE, fs); row+=lh;
+      PanelLabel("L_PL","", px, row, clrNONE, fs); PanelLabel("V_PL","", px-130, row, clrNONE, fs); row+=lh;
+      PanelLabel("L_HOLD","", px, row, clrNONE, fs); PanelLabel("V_HOLD","", px-130, row, clrNONE, fs); row+=lh;
    }
+
+   // Stats
+   PanelLabel("SEP8","────────────────────────", px, row, C'50,50,80', fs-1); row+=lh-2;
+   int totalTrades = gWinCount + gLossCount;
+   double wr = totalTrades>0 ? (gWinCount*100.0/totalTrades) : 0;
+   PanelLabel("L_STAT","WIN/LOSS  :", px, row, clrSilver, fs);
+   PanelLabel("V_STAT", StringFormat(" %d W / %d L  (%.0f%%)", gWinCount, gLossCount, wr), px-130, row, wr>=50?clrLimeGreen:clrTomato, fs); row+=lh;
+
+   // Resize background
+   PanelRect("BG", x, y0, 260, row-y0+8, C'15,15,25');
+
+   ChartRedraw(0);
 }
 //+------------------------------------------------------------------+
