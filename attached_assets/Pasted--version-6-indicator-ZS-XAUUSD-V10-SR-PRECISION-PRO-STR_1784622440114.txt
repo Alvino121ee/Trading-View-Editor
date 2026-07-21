@@ -726,6 +726,11 @@ var float totalRR = 0.0
 var string lastResult = "NONE"
 var int lastExitBar = na
 
+//==================== LAST 100 SIGNAL TRACKING ====================//
+var array<bool>  last100WinArr   = array.new_bool()
+var array<float> last100RRArr    = array.new_float()
+var array<int>   last100BestTPArr= array.new_int()
+
 totalTrades = winCount + lossCount
 winrate = totalTrades > 0 ? winCount * 100.0 / totalTrades : na
 
@@ -929,6 +934,15 @@ if tradeActive and bar_index > activeBar
 
         totalRR += exitRR
         lastResult := resultText + " | RR " + str.tostring(exitRR, "#.##")
+
+        //==================== LAST 100 SIGNAL PUSH ====================//
+        array.push(last100WinArr, isWin)
+        array.push(last100RRArr, exitRR)
+        array.push(last100BestTPArr, bestTP)
+        if array.size(last100WinArr) > 100
+            array.shift(last100WinArr)
+            array.shift(last100RRArr)
+            array.shift(last100BestTPArr)
 
         if showResultLabel
             label.new(bar_index, resultPrice, resultText, style=isWin ? label.style_label_down : label.style_label_up, color=isWin ? color.green : color.red, textcolor=color.white, size=size.small)
@@ -1297,8 +1311,32 @@ alertcondition(sellValid, title="ZS V10 SELL VALID", message="ZS V10 SELL VALID.
 var table panel = table.new(position.top_right, 2, 19, border_width=1)
 
 if barstate.islast and showPanel
-    panelTotalTrades = winCount + lossCount
-    panelWinrate = panelTotalTrades > 0 ? winCount * 100.0 / panelTotalTrades : na
+    // ── Hitung statistik dari 100 signal terakhir ──
+    p100Size = array.size(last100WinArr)
+    p100Win  = 0
+    p100Loss = 0
+    p100TP1  = 0
+    p100TP2  = 0
+    p100TP3  = 0
+    p100RR   = 0.0
+    if p100Size > 0
+        for _i = 0 to p100Size - 1
+            _w  = array.get(last100WinArr,    _i)
+            _rr = array.get(last100RRArr,     _i)
+            _tp = array.get(last100BestTPArr, _i)
+            p100RR += _rr
+            if _w
+                p100Win += 1
+                if _tp == 1
+                    p100TP1 += 1
+                else if _tp == 2
+                    p100TP2 += 1
+                else if _tp == 3
+                    p100TP3 += 1
+            else
+                p100Loss += 1
+
+    p100WR   = p100Size > 0 ? p100Win * 100.0 / p100Size : na
 
     status =
          tradeActive ? activeDir == 1 ? "BUY ACTIVE" : "SELL ACTIVE" :
@@ -1317,7 +1355,7 @@ if barstate.islast and showPanel
          regimeText == "SIDEWAYS" ? color.orange :
          color.gray
 
-    wrText = panelTotalTrades > 0 ? str.tostring(panelWinrate, "#.##") + "%" : "-"
+    wrText = p100Size > 0 ? str.tostring(p100WR, "#.##") + "% (" + str.tostring(p100Size) + ")" : "-"
 
     table.cell(panel, 0, 0, "ZS V10 SR PRECISION", bgcolor=color.black, text_color=color.white)
     table.cell(panel, 1, 0, status, bgcolor=statusColor, text_color=color.white)
@@ -1346,26 +1384,26 @@ if barstate.islast and showPanel
     table.cell(panel, 0, 8, "Entry Mode", bgcolor=color.black, text_color=color.white)
     table.cell(panel, 1, 8, entryMode + " | " + (tradeActive ? activeSetupClass : pendingSetupClass), bgcolor=color.black, text_color=color.white)
 
-    table.cell(panel, 0, 9, "WIN", bgcolor=color.black, text_color=color.white)
-    table.cell(panel, 1, 9, str.tostring(winCount), bgcolor=color.green, text_color=color.white)
+    table.cell(panel, 0, 9, "WIN (100)", bgcolor=color.black, text_color=color.white)
+    table.cell(panel, 1, 9, str.tostring(p100Win), bgcolor=color.green, text_color=color.white)
 
-    table.cell(panel, 0, 10, "LOSS", bgcolor=color.black, text_color=color.white)
-    table.cell(panel, 1, 10, str.tostring(lossCount), bgcolor=color.red, text_color=color.white)
+    table.cell(panel, 0, 10, "LOSS (100)", bgcolor=color.black, text_color=color.white)
+    table.cell(panel, 1, 10, str.tostring(p100Loss), bgcolor=color.red, text_color=color.white)
 
-    table.cell(panel, 0, 11, "TP1/TP2/TP3", bgcolor=color.black, text_color=color.white)
-    table.cell(panel, 1, 11, str.tostring(tp1WinCount) + "/" + str.tostring(tp2WinCount) + "/" + str.tostring(tp3WinCount), bgcolor=color.black, text_color=color.white)
+    table.cell(panel, 0, 11, "TP1/TP2/TP3 (100)", bgcolor=color.black, text_color=color.white)
+    table.cell(panel, 1, 11, str.tostring(p100TP1) + "/" + str.tostring(p100TP2) + "/" + str.tostring(p100TP3), bgcolor=color.black, text_color=color.white)
 
     table.cell(panel, 0, 12, "Time Close", bgcolor=color.black, text_color=color.white)
     table.cell(panel, 1, 12, str.tostring(timeCloseCount), bgcolor=color.black, text_color=color.white)
 
-    table.cell(panel, 0, 13, "Total", bgcolor=color.black, text_color=color.white)
-    table.cell(panel, 1, 13, str.tostring(panelTotalTrades), bgcolor=color.black, text_color=color.white)
+    table.cell(panel, 0, 13, "Total (100)", bgcolor=color.black, text_color=color.white)
+    table.cell(panel, 1, 13, str.tostring(p100Size), bgcolor=color.black, text_color=color.white)
 
-    table.cell(panel, 0, 14, "Winrate", bgcolor=color.black, text_color=color.white)
-    table.cell(panel, 1, 14, wrText, bgcolor=color.black, text_color=color.white)
+    table.cell(panel, 0, 14, "Winrate (100)", bgcolor=color.black, text_color=color.white)
+    table.cell(panel, 1, 14, wrText, bgcolor=p100Size > 0 and p100WR >= 50 ? color.green : color.red, text_color=color.white)
 
-    table.cell(panel, 0, 15, "Total RR", bgcolor=color.black, text_color=color.white)
-    table.cell(panel, 1, 15, str.tostring(totalRR, "#.##"), bgcolor=totalRR >= 0 ? color.green : color.red, text_color=color.white)
+    table.cell(panel, 0, 15, "Total RR (100)", bgcolor=color.black, text_color=color.white)
+    table.cell(panel, 1, 15, str.tostring(p100RR, "#.##"), bgcolor=p100RR >= 0 ? color.green : color.red, text_color=color.white)
 
     table.cell(panel, 0, 16, "Session", bgcolor=color.black, text_color=color.white)
     table.cell(panel, 1, 16, sessionText, bgcolor=sessionOK ? color.green : color.red, text_color=color.white)
