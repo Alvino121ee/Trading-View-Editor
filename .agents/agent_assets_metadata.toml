@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "FDU9kyPkdR0nIGo1RMgRM"
+uri = "file://attached_assets/Pasted--version-6-indicator-ZS-XAUUSD-V10-SR-PRECISION-PRO-STR_1784622440114.txt"
+type = "text"
+title = "ZS XAUUSD V10 - Progressive TP Win Validation"
