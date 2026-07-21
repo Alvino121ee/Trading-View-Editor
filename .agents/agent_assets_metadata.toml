@@ -6,3 +6,9 @@ id = "FDU9kyPkdR0nIGo1RMgRM"
 uri = "file://attached_assets/Pasted--version-6-indicator-ZS-XAUUSD-V10-SR-PRECISION-PRO-STR_1784622440114.txt"
 type = "text"
 title = "ZS XAUUSD V10 - Panel 100 Signal Terakhir"
+
+[[outputs]]
+id = "GTD14H-Kd_GSOPFE_TvSY"
+uri = "file://ZS_MT5_Bridge_EA.mq5"
+type = "unspecified"
+title = "ZS MT5 Bridge EA (Install di MetaTrader 5)"
