@@ -758,7 +758,9 @@ void DrawPanel()
    int x  = InpPanelX;
    int y0 = InpPanelY;
    int lh = InpPanelFontSize + 5; // line height
-   int px = x + 4;                // padding kiri (dari kanan)
+   int px = x + 4;                // margin kanan panel
+   int lx = px + 130;             // kolom label (kiri)  — lebih jauh dari kanan = lebih ke kiri di layar
+   int vx = px;                   // kolom value (kanan) — dekat dari kanan = lebih ke kanan di layar
    int fs = InpPanelFontSize;
 
    // -- Status & warna --
@@ -778,86 +780,86 @@ void DrawPanel()
    int row = y0 + 4;
 
    // JUDUL
-   PanelLabel("T1", "  ZS V10 SR PRECISION EA", px, row, clrGold, fs);
+   PanelLabel("T1", "  ZS V10 SR PRECISION EA", lx, row, clrGold, fs);
    row += lh + 4;
 
    // Separator
-   PanelLabel("SEP1","────────────────────────", px, row, C'50,50,80', fs-1); row+=lh-2;
+   PanelLabel("SEP1","────────────────────────", lx, row, C'50,50,80', fs-1); row+=lh-2;
 
    // STATUS
-   PanelLabel("L_STATUS", "STATUS    :", px, row, clrSilver, fs);
-   PanelLabel("V_STATUS",  " "+gPanelStatus, px - 130, row, statusColor, fs);
+   PanelLabel("L_STATUS", "STATUS    :", lx, row, clrSilver, fs);
+   PanelLabel("V_STATUS",  " "+gPanelStatus, vx, row, statusColor, fs);
    row += lh;
 
    // SETUP
    color setupCol = (StringFind(gPanelSetup,"BUY")>=0) ? clrLimeGreen : (StringFind(gPanelSetup,"SELL")>=0) ? clrTomato : clrSilver;
-   PanelLabel("L_SETUP",  "SETUP     :", px, row, clrSilver, fs);
-   PanelLabel("V_SETUP",   " "+gPanelSetup, px-130, row, setupCol, fs);
+   PanelLabel("L_SETUP",  "SETUP     :", lx, row, clrSilver, fs);
+   PanelLabel("V_SETUP",   " "+gPanelSetup, vx, row, setupCol, fs);
    row += lh;
 
    // Separator
-   PanelLabel("SEP2","────────────────────────", px, row, C'50,50,80', fs-1); row+=lh-2;
+   PanelLabel("SEP2","────────────────────────", lx, row, C'50,50,80', fs-1); row+=lh-2;
 
    // SCORE
    color buyScoreCol  = gBuyScore>=gMinQuality  ? clrLimeGreen : clrSilver;
    color sellScoreCol = gSellScore>=gMinQuality ? clrTomato    : clrSilver;
-   PanelLabel("L_BS","BUY  SCORE:", px, row, clrSilver, fs);
-   PanelLabel("V_BS", StringFormat(" %d / %d", gBuyScore, gMinQuality), px-130, row, buyScoreCol, fs);
+   PanelLabel("L_BS","BUY  SCORE:", lx, row, clrSilver, fs);
+   PanelLabel("V_BS", StringFormat(" %d / %d", gBuyScore, gMinQuality), vx, row, buyScoreCol, fs);
    row+=lh;
-   PanelLabel("L_SS","SELL SCORE:", px, row, clrSilver, fs);
-   PanelLabel("V_SS", StringFormat(" %d / %d", gSellScore, gMinQuality), px-130, row, sellScoreCol, fs);
+   PanelLabel("L_SS","SELL SCORE:", lx, row, clrSilver, fs);
+   PanelLabel("V_SS", StringFormat(" %d / %d", gSellScore, gMinQuality), vx, row, sellScoreCol, fs);
    row+=lh;
 
    // Separator
-   PanelLabel("SEP3","────────────────────────", px, row, C'50,50,80', fs-1); row+=lh-2;
+   PanelLabel("SEP3","────────────────────────", lx, row, C'50,50,80', fs-1); row+=lh-2;
 
    // TREND MTF
-   PanelLabel("L_T","BULL/BEAR :", px, row, clrSilver, fs);
+   PanelLabel("L_T","BULL/BEAR :", lx, row, clrSilver, fs);
    string bcText = StringFormat(" %dB / %dS", gBullCount, gBearCount);
    color bcCol = (gBullCount>=2)?clrLimeGreen:(gBearCount>=2)?clrTomato:clrOrange;
-   PanelLabel("V_T", bcText, px-130, row, bcCol, fs);
+   PanelLabel("V_T", bcText, vx, row, bcCol, fs);
    row+=lh;
 
-   PanelLabel("L_M1","M1 EMA    :", px, row, clrSilver, fs);
+   PanelLabel("L_M1","M1 EMA    :", lx, row, clrSilver, fs);
    string m1txt = gM1Bull?" BULL ▲":gM1Bear?" BEAR ▼":" MIXED";
    color m1col  = gM1Bull?clrLimeGreen:gM1Bear?clrTomato:clrGray;
-   PanelLabel("V_M1", m1txt, px-130, row, m1col, fs); row+=lh;
+   PanelLabel("V_M1", m1txt, vx, row, m1col, fs); row+=lh;
 
-   PanelLabel("L_M5","M5 EMA    :", px, row, clrSilver, fs);
+   PanelLabel("L_M5","M5 EMA    :", lx, row, clrSilver, fs);
    string m5txt = gM5Bull?" BULL ▲":gM5Bear?" BEAR ▼":" MIXED";
    color m5col  = gM5Bull?clrLimeGreen:gM5Bear?clrTomato:clrGray;
-   PanelLabel("V_M5", m5txt, px-130, row, m5col, fs); row+=lh;
+   PanelLabel("V_M5", m5txt, vx, row, m5col, fs); row+=lh;
 
-   PanelLabel("L_M15","M15 EMA  :", px, row, clrSilver, fs);
+   PanelLabel("L_M15","M15 EMA  :", lx, row, clrSilver, fs);
    string m15txt = gM15Bull?" BULL ▲":gM15Bear?" BEAR ▼":" MIXED";
    color m15col  = gM15Bull?clrLimeGreen:gM15Bear?clrTomato:clrGray;
-   PanelLabel("V_M15", m15txt, px-130, row, m15col, fs); row+=lh;
+   PanelLabel("V_M15", m15txt, vx, row, m15col, fs); row+=lh;
 
    string regimeText = (gBullCount>=2)?"BUY BIAS":(gBearCount>=2)?"SELL BIAS":gSidewaysFlag?"SIDEWAYS":"MIXED";
    color regCol = (gBullCount>=2)?clrLimeGreen:(gBearCount>=2)?clrTomato:clrOrange;
-   PanelLabel("L_RG","REGIME    :", px, row, clrSilver, fs);
-   PanelLabel("V_RG"," "+regimeText, px-130, row, regCol, fs); row+=lh;
+   PanelLabel("L_RG","REGIME    :", lx, row, clrSilver, fs);
+   PanelLabel("V_RG"," "+regimeText, vx, row, regCol, fs); row+=lh;
 
    // Separator
-   PanelLabel("SEP4","────────────────────────", px, row, C'50,50,80', fs-1); row+=lh-2;
+   PanelLabel("SEP4","────────────────────────", lx, row, C'50,50,80', fs-1); row+=lh-2;
 
    // RSI / ADX / ATR
    color rsiCol = (gRsiVal>=40&&gRsiVal<=60)?clrSilver:(gRsiVal<40)?clrLimeGreen:clrTomato;
-   PanelLabel("L_RSI","RSI(14)   :", px, row, clrSilver, fs);
-   PanelLabel("V_RSI", StringFormat(" %.1f", gRsiVal), px-130, row, rsiCol, fs); row+=lh;
+   PanelLabel("L_RSI","RSI(14)   :", lx, row, clrSilver, fs);
+   PanelLabel("V_RSI", StringFormat(" %.1f", gRsiVal), vx, row, rsiCol, fs); row+=lh;
 
    color adxCol = (gAdxVal>=25)?clrGold:clrSilver;
-   PanelLabel("L_ADX","ADX(14)   :", px, row, clrSilver, fs);
-   PanelLabel("V_ADX", StringFormat(" %.1f %s", gAdxVal, gAdxVal<=InpSideMaxADX?"[SIDE]":"[TREND]"), px-130, row, adxCol, fs); row+=lh;
+   PanelLabel("L_ADX","ADX(14)   :", lx, row, clrSilver, fs);
+   PanelLabel("V_ADX", StringFormat(" %.1f %s", gAdxVal, gAdxVal<=InpSideMaxADX?"[SIDE]":"[TREND]"), vx, row, adxCol, fs); row+=lh;
 
-   PanelLabel("L_ATR","ATR(14)   :", px, row, clrSilver, fs);
-   PanelLabel("V_ATR", StringFormat(" %.2f", gAtrVal), px-130, row, clrSilver, fs); row+=lh;
+   PanelLabel("L_ATR","ATR(14)   :", lx, row, clrSilver, fs);
+   PanelLabel("V_ATR", StringFormat(" %.2f", gAtrVal), vx, row, clrSilver, fs); row+=lh;
 
    // SR Status
-   PanelLabel("SEP5","────────────────────────", px, row, C'50,50,80', fs-1); row+=lh-2;
+   PanelLabel("SEP5","────────────────────────", lx, row, C'50,50,80', fs-1); row+=lh-2;
    color srCol = (gSRStatus=="NEUTRAL")?clrSilver:(StringFind(gSRStatus,"BUY")>=0||StringFind(gSRStatus,"SUPPORT")>=0)?clrLimeGreen:clrTomato;
-   PanelLabel("L_SR","SR STATUS :", px, row, clrSilver, fs);
-   PanelLabel("V_SR"," "+gSRStatus, px-130, row, srCol, fs); row+=lh;
+   PanelLabel("L_SR","SR STATUS :", lx, row, clrSilver, fs);
+   PanelLabel("V_SR"," "+gSRStatus, vx, row, srCol, fs); row+=lh;
 
    bool anyBlockBuy  = gSRBlockBuy  || gPrecBlockBuy  || gPeakBlock;
    bool anyBlockSell = gSRBlockSell || gPrecBlockSell || gDeepBlock;
@@ -866,23 +868,23 @@ void DrawPanel()
                      anyBlockBuy                     ? (gPeakBlock?"PEAK(RSI)":"BLOCK BUY") :
                                                        (gDeepBlock?"DEEP(RSI)":"BLOCK SELL");
    color blockCol  = (blockTxt=="OK")?clrLimeGreen:clrTomato;
-   PanelLabel("L_BL","SR BLOCK  :", px, row, clrSilver, fs);
-   PanelLabel("V_BL"," "+blockTxt, px-130, row, blockCol, fs); row+=lh;
+   PanelLabel("L_BL","SR BLOCK  :", lx, row, clrSilver, fs);
+   PanelLabel("V_BL"," "+blockTxt, vx, row, blockCol, fs); row+=lh;
 
    string supTxt = gSupLevel>0?StringFormat(" %.2f",gSupLevel):" -";
    string resTxt = gResLevel>0?StringFormat(" %.2f",gResLevel):" -";
-   PanelLabel("L_SUP","SUPPORT   :", px, row, clrSilver, fs);
-   PanelLabel("V_SUP", supTxt, px-130, row, clrLimeGreen, fs); row+=lh;
-   PanelLabel("L_RES","RESIST    :", px, row, clrSilver, fs);
-   PanelLabel("V_RES", resTxt, px-130, row, clrTomato, fs); row+=lh;
+   PanelLabel("L_SUP","SUPPORT   :", lx, row, clrSilver, fs);
+   PanelLabel("V_SUP", supTxt, vx, row, clrLimeGreen, fs); row+=lh;
+   PanelLabel("L_RES","RESIST    :", lx, row, clrSilver, fs);
+   PanelLabel("V_RES", resTxt, vx, row, clrTomato, fs); row+=lh;
 
    // Session
-   PanelLabel("SEP6","────────────────────────", px, row, C'50,50,80', fs-1); row+=lh-2;
-   PanelLabel("L_SES","SESSION   :", px, row, clrSilver, fs);
-   PanelLabel("V_SES", gSessionOK?" WIB ON ✓":" WIB OFF ✗", px-130, row, gSessionOK?clrLimeGreen:clrGray, fs); row+=lh;
+   PanelLabel("SEP6","────────────────────────", lx, row, C'50,50,80', fs-1); row+=lh-2;
+   PanelLabel("L_SES","SESSION   :", lx, row, clrSilver, fs);
+   PanelLabel("V_SES", gSessionOK?" WIB ON ✓":" WIB OFF ✗", vx, row, gSessionOK?clrLimeGreen:clrGray, fs); row+=lh;
 
    // Trade info
-   PanelLabel("SEP7","────────────────────────", px, row, C'50,50,80', fs-1); row+=lh-2;
+   PanelLabel("SEP7","────────────────────────", lx, row, C'50,50,80', fs-1); row+=lh-2;
 
    if(gDir!=0 && HasActivePosition())
    {
@@ -898,50 +900,50 @@ void DrawPanel()
       color plCol = pl>=0?clrLimeGreen:clrTomato;
       string plSign = pl>=0?"+":"";
 
-      PanelLabel("L_EN","ENTRY     :", px, row, clrSilver, fs);
-      PanelLabel("V_EN", StringFormat(" %.2f", gEntry), px-130, row, clrGold, fs); row+=lh;
+      PanelLabel("L_EN","ENTRY     :", lx, row, clrSilver, fs);
+      PanelLabel("V_EN", StringFormat(" %.2f", gEntry), vx, row, clrGold, fs); row+=lh;
 
-      PanelLabel("L_SL2","SL        :", px, row, clrSilver, fs);
-      PanelLabel("V_SL2", StringFormat(" %.2f", gSL), px-130, row, clrTomato, fs); row+=lh;
+      PanelLabel("L_SL2","SL        :", lx, row, clrSilver, fs);
+      PanelLabel("V_SL2", StringFormat(" %.2f", gSL), vx, row, clrTomato, fs); row+=lh;
 
       string tp1Mark = gHitTP1?" ✓":"";
       string tp2Mark = gHitTP2?" ✓":"";
-      PanelLabel("L_T1","TP1       :", px, row, clrSilver, fs);
-      PanelLabel("V_T1", StringFormat(" %.2f%s", gTP1, tp1Mark), px-130, row, gHitTP1?clrGold:clrLimeGreen, fs); row+=lh;
-      PanelLabel("L_T2","TP2       :", px, row, clrSilver, fs);
-      PanelLabel("V_T2", StringFormat(" %.2f%s", gTP2, tp2Mark), px-130, row, gHitTP2?clrGold:clrLimeGreen, fs); row+=lh;
-      PanelLabel("L_T3","TP3       :", px, row, clrSilver, fs);
-      PanelLabel("V_T3", StringFormat(" %.2f", gTP3), px-130, row, clrLimeGreen, fs); row+=lh;
+      PanelLabel("L_T1","TP1       :", lx, row, clrSilver, fs);
+      PanelLabel("V_T1", StringFormat(" %.2f%s", gTP1, tp1Mark), vx, row, gHitTP1?clrGold:clrLimeGreen, fs); row+=lh;
+      PanelLabel("L_T2","TP2       :", lx, row, clrSilver, fs);
+      PanelLabel("V_T2", StringFormat(" %.2f%s", gTP2, tp2Mark), vx, row, gHitTP2?clrGold:clrLimeGreen, fs); row+=lh;
+      PanelLabel("L_T3","TP3       :", lx, row, clrSilver, fs);
+      PanelLabel("V_T3", StringFormat(" %.2f", gTP3), vx, row, clrLimeGreen, fs); row+=lh;
 
-      PanelLabel("L_NOW","PRICE NOW :", px, row, clrSilver, fs);
-      PanelLabel("V_NOW", StringFormat(" %.2f", curPrice), px-130, row, clrWhite, fs); row+=lh;
+      PanelLabel("L_NOW","PRICE NOW :", lx, row, clrSilver, fs);
+      PanelLabel("V_NOW", StringFormat(" %.2f", curPrice), vx, row, clrWhite, fs); row+=lh;
 
-      PanelLabel("L_PL","P / L     :", px, row, clrSilver, fs);
-      PanelLabel("V_PL", StringFormat(" %s%.2f $", plSign, pl), px-130, row, plCol, fs); row+=lh;
+      PanelLabel("L_PL","P / L     :", lx, row, clrSilver, fs);
+      PanelLabel("V_PL", StringFormat(" %s%.2f $", plSign, pl), vx, row, plCol, fs); row+=lh;
 
       int holdMin=(int)((TimeCurrent()-gOpenTime)/60);
-      PanelLabel("L_HOLD","HOLD TIME :", px, row, clrSilver, fs);
-      PanelLabel("V_HOLD", StringFormat(" %d / %d min", holdMin, InpMaxHoldMinutes), px-130, row, holdMin>InpMaxHoldMinutes*0.8?clrOrange:clrSilver, fs); row+=lh;
+      PanelLabel("L_HOLD","HOLD TIME :", lx, row, clrSilver, fs);
+      PanelLabel("V_HOLD", StringFormat(" %d / %d min", holdMin, InpMaxHoldMinutes), vx, row, holdMin>InpMaxHoldMinutes*0.8?clrOrange:clrSilver, fs); row+=lh;
    }
    else
    {
-      PanelLabel("L_EN", "NO ACTIVE TRADE", px, row, C'70,70,90', fs); row+=lh;
-      PanelLabel("V_EN","", px-130, row, clrNONE, fs);
-      PanelLabel("L_SL2","", px, row, clrNONE, fs); PanelLabel("V_SL2","", px-130, row, clrNONE, fs); row+=lh;
-      PanelLabel("L_T1","", px, row, clrNONE, fs); PanelLabel("V_T1","", px-130, row, clrNONE, fs); row+=lh;
-      PanelLabel("L_T2","", px, row, clrNONE, fs); PanelLabel("V_T2","", px-130, row, clrNONE, fs); row+=lh;
-      PanelLabel("L_T3","", px, row, clrNONE, fs); PanelLabel("V_T3","", px-130, row, clrNONE, fs); row+=lh;
-      PanelLabel("L_NOW","", px, row, clrNONE, fs); PanelLabel("V_NOW","", px-130, row, clrNONE, fs); row+=lh;
-      PanelLabel("L_PL","", px, row, clrNONE, fs); PanelLabel("V_PL","", px-130, row, clrNONE, fs); row+=lh;
-      PanelLabel("L_HOLD","", px, row, clrNONE, fs); PanelLabel("V_HOLD","", px-130, row, clrNONE, fs); row+=lh;
+      PanelLabel("L_EN", "NO ACTIVE TRADE", lx, row, C'70,70,90', fs); row+=lh;
+      PanelLabel("V_EN","", vx, row, clrNONE, fs);
+      PanelLabel("L_SL2","", lx, row, clrNONE, fs); PanelLabel("V_SL2","", vx, row, clrNONE, fs); row+=lh;
+      PanelLabel("L_T1","", lx, row, clrNONE, fs); PanelLabel("V_T1","", vx, row, clrNONE, fs); row+=lh;
+      PanelLabel("L_T2","", lx, row, clrNONE, fs); PanelLabel("V_T2","", vx, row, clrNONE, fs); row+=lh;
+      PanelLabel("L_T3","", lx, row, clrNONE, fs); PanelLabel("V_T3","", vx, row, clrNONE, fs); row+=lh;
+      PanelLabel("L_NOW","", lx, row, clrNONE, fs); PanelLabel("V_NOW","", vx, row, clrNONE, fs); row+=lh;
+      PanelLabel("L_PL","", lx, row, clrNONE, fs); PanelLabel("V_PL","", vx, row, clrNONE, fs); row+=lh;
+      PanelLabel("L_HOLD","", lx, row, clrNONE, fs); PanelLabel("V_HOLD","", vx, row, clrNONE, fs); row+=lh;
    }
 
    // Stats
-   PanelLabel("SEP8","────────────────────────", px, row, C'50,50,80', fs-1); row+=lh-2;
+   PanelLabel("SEP8","────────────────────────", lx, row, C'50,50,80', fs-1); row+=lh-2;
    int totalTrades = gWinCount + gLossCount;
    double wr = totalTrades>0 ? (gWinCount*100.0/totalTrades) : 0;
-   PanelLabel("L_STAT","WIN/LOSS  :", px, row, clrSilver, fs);
-   PanelLabel("V_STAT", StringFormat(" %d W / %d L  (%.0f%%)", gWinCount, gLossCount, wr), px-130, row, wr>=50?clrLimeGreen:clrTomato, fs); row+=lh;
+   PanelLabel("L_STAT","WIN/LOSS  :", lx, row, clrSilver, fs);
+   PanelLabel("V_STAT", StringFormat(" %d W / %d L  (%.0f%%)", gWinCount, gLossCount, wr), vx, row, wr>=50?clrLimeGreen:clrTomato, fs); row+=lh;
 
    // Resize background
    PanelRect("BG", x, y0, 260, row-y0+8, C'15,15,25');
