@@ -1,22 +1,22 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: ZS MT5 Bridge API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: monitor
+    description: Signal monitoring dashboard
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +24,39 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /monitor/signals:
+    get:
+      operationId: listMonitorSignals
+      tags: [monitor]
+      summary: Get recent signals for dashboard
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 100
+      responses:
+        "200":
+          description: Signal list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignalListResponse"
+
+  /monitor/summary:
+    get:
+      operationId: getMonitorSummary
+      tags: [monitor]
+      summary: Get aggregate stats and active signal
+      responses:
+        "200":
+          description: Summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MonitorSummaryResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +67,101 @@ components:
       required:
         - status
 
+    Signal:
+      type: object
+      properties:
+        id:
+          type: integer
+        action:
+          type: string
+        symbol:
+          type: string
+        lot:
+          type: ["string", "null"]
+        entry:
+          type: ["string", "null"]
+        sl:
+          type: ["string", "null"]
+        tp1:
+          type: ["string", "null"]
+        tp2:
+          type: ["string", "null"]
+        tp3:
+          type: ["string", "null"]
+        setup:
+          type: ["string", "null"]
+        comment:
+          type: ["string", "null"]
+        status:
+          type: string
+        mt5Ticket:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        executedAt:
+          type: ["string", "null"]
+          format: date-time
+      required:
+        - id
+        - action
+        - symbol
+        - status
+        - createdAt
+        - updatedAt
+
+    SignalListResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        signals:
+          type: array
+          items:
+            $ref: "#/components/schemas/Signal"
+      required:
+        - ok
+        - signals
+
+    MonitorStats:
+      type: object
+      properties:
+        total:
+          type: integer
+        pending:
+          type: integer
+        sent:
+          type: integer
+        executed:
+          type: integer
+        cancelled:
+          type: integer
+        expired:
+          type: integer
+      required:
+        - total
+        - pending
+        - sent
+        - executed
+        - cancelled
+        - expired
+
+    MonitorSummaryResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        stats:
+          $ref: "#/components/schemas/MonitorStats"
+        active:
+          type: ["object", "null"]
+          $ref: "#/components/schemas/Signal"
+        lastTrade:
+          type: ["object", "null"]
+          $ref: "#/components/schemas/Signal"
+      required:
+        - ok
+        - stats

@@ -5,9 +5,6 @@
  * ZS MT5 Bridge API
  * OpenAPI spec version: 0.1.0
  */
-export interface HealthStatus {
-  status: string;
-}
 
 export interface Signal {
   id: number;
@@ -32,36 +29,8 @@ export interface Signal {
   status: string;
   /** @nullable */
   mt5Ticket?: number | null;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: Date;
+  updatedAt: Date;
   /** @nullable */
-  executedAt?: string | null;
+  executedAt?: Date | null;
 }
-
-export interface SignalListResponse {
-  ok: boolean;
-  signals: Signal[];
-}
-
-export interface MonitorStats {
-  total: number;
-  pending: number;
-  sent: number;
-  executed: number;
-  cancelled: number;
-  expired: number;
-}
-
-export interface MonitorSummaryResponse {
-  ok: boolean;
-  stats: MonitorStats;
-  /** @nullable */
-  active?: Signal | null;
-  /** @nullable */
-  lastTrade?: Signal | null;
-}
-
-export type ListMonitorSignalsParams = {
-limit?: number;
-};
-

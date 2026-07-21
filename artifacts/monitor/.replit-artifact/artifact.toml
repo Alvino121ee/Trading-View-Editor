@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/"
+title = "MT5 Signal Monitor"
+version = "1.0.0"
+id = "artifacts/monitor"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25796
+
+[services.development]
+run = "pnpm --filter @workspace/monitor run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/monitor", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/monitor/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25796"
+BASE_PATH = "/"

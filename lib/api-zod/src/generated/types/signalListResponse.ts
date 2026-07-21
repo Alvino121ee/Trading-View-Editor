@@ -5,7 +5,9 @@
  * ZS MT5 Bridge API
  * OpenAPI spec version: 0.1.0
  */
+import type { Signal } from './signal';
 
-export interface HealthStatus {
-  status: string;
+export interface SignalListResponse {
+  ok: boolean;
+  signals: Signal[];
 }

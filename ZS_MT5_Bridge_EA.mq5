@@ -1,69 +1,166 @@
 //+------------------------------------------------------------------+
-//|  ZS_MT5_Bridge_EA.mq5                                           |
-//|  Auto trading EA - mengambil sinyal dari TradingView via server  |
+//|  ZS_MT5_Bridge_EA.mq5  — Market Order + Trailing Stop Edition   |
 //|                                                                  |
 //|  CARA INSTALL:                                                   |
-//|  1. Copy file ini ke: MT5 > File > Open Data Folder >           |
-//|     MQL5 > Experts                                               |
-//|  2. Buka MT5 > Tools > Options > Expert Advisors                 |
-//|  3. Centang "Allow WebRequest for listed URL"                    |
-//|  4. Tambahkan URL server Anda (contoh: https://xxx.replit.app)  |
-//|  5. Attach EA ke chart XAUUSD                                    |
+//|  1. Copy ke: MT5 > File > Open Data Folder > MQL5 > Experts     |
+//|  2. Tools > Options > Expert Advisors:                           |
+//|     - Centang "Allow Automated Trading"                          |
+//|     - Centang "Allow WebRequest for listed URL"                  |
+//|     - Tambahkan URL server Anda                                  |
+//|  3. Compile (F7) lalu attach ke chart XAUUSD                    |
 //+------------------------------------------------------------------+
 #property copyright "ZS Trading"
-#property link      ""
-#property version   "1.00"
+#property version   "2.00"
 #property strict
 
 #include <Trade\Trade.mqh>
+#include <Trade\PositionInfo.mqh>
 
 //--- Input Parameters
-input group "=== SERVER SETTINGS ==="
-input string InpServerURL    = "https://YOUR-APP.replit.app"; // URL Server (ganti dengan URL Replit Anda)
-input string InpSecret       = "ZS909506";                    // Webhook Secret (sama dengan di PineScript)
+input group "=== SERVER ==="
+input string InpServerURL    = "https://YOUR-APP.replit.app"; // URL Server Bridge
+input string InpSecret       = "ZS909506";                    // Webhook Secret
 input string InpSymbol       = "XAUUSD";                      // Symbol MT5
-input int    InpPollInterval = 5;                              // Poll setiap N detik
+input int    InpPollInterval = 5;                              // Poll interval (detik)
 
-input group "=== ORDER SETTINGS ==="
-input int    InpMagicNumber  = 909506;                        // Magic Number
-input int    InpSlippage     = 10;                            // Slippage (pips)
-input bool   InpDeleteOnNew  = true;                          // Hapus pending lama saat ada sinyal baru
-input bool   InpUseTP2       = false;                         // Gunakan TP2 sebagai target (default: TP1)
-input bool   InpUseTP3       = false;                         // Gunakan TP3 sebagai target
+input group "=== ORDER ==="
+input int    InpMagicNumber  = 909506;                        // Magic Number EA
+input int    InpSlippage     = 20;                            // Max Slippage (points)
+input bool   InpDeleteOnNew  = true;                          // Tutup posisi lama saat sinyal baru
+input double InpMaxLot       = 1.0;                           // Batas maksimal lot
+
+input group "=== TRAILING STOP SYSTEM ==="
+// Saat nyentuh TP1 → SL pindah ke Breakeven (entry)
+// Saat nyentuh TP2 → SL pindah ke TP1
+// Saat nyentuh TP3 → Close posisi (DONE)
+input bool   InpTrailingEnabled = true;                       // Aktifkan trailing stop
 
 input group "=== SAFETY ==="
 input bool   InpEnabled      = true;                          // EA Aktif
-input double InpMaxLot       = 1.0;                           // Maksimal lot per order
 
-//--- Global
-CTrade trade;
-int    lastSignalId  = 0;
-bool   serverReachable = false;
+//--- Globals
+CTrade         trade;
+CPositionInfo  posInfo;
+
+// Data sinyal aktif yang sedang running
+double gEntry = 0;
+double gSL    = 0;
+double gTP1   = 0;
+double gTP2   = 0;
+double gTP3   = 0;
+int    gDir   = 0; // 1=BUY, -1=SELL
+bool   gHitTP1 = false;
+bool   gHitTP2 = false;
+int    gLastSignalId = 0;
 
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   if(!InpEnabled)
-   {
-      Print("EA dinonaktifkan via input.");
-      return INIT_SUCCEEDED;
-   }
+   if(!InpEnabled) { Print("EA dinonaktifkan."); return INIT_SUCCEEDED; }
 
    trade.SetExpertMagicNumber(InpMagicNumber);
    trade.SetDeviationInPoints(InpSlippage);
-   trade.SetTypeFilling(ORDER_FILLING_FOK);
+   trade.SetTypeFilling(ORDER_FILLING_IOC);
 
    EventSetTimer(InpPollInterval);
-   Print("ZS Bridge EA aktif. Server: ", InpServerURL, " | Poll setiap ", InpPollInterval, "s");
+   Print("ZS Bridge EA v2.0 aktif | Server: ", InpServerURL);
    return INIT_SUCCEEDED;
 }
 
+void OnDeinit(const int reason) { EventKillTimer(); }
+
 //+------------------------------------------------------------------+
-void OnDeinit(const int reason)
+//  MAIN TICK — Trailing Stop Logic
+//+------------------------------------------------------------------+
+void OnTick()
 {
-   EventKillTimer();
+   if(!InpEnabled || !InpTrailingEnabled) return;
+   if(gDir == 0) return; // tidak ada posisi aktif yang dimonitor
+
+   // Cari posisi yang sesuai magic number
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      if(!posInfo.SelectByIndex(i)) continue;
+      if(posInfo.Magic() != InpMagicNumber) continue;
+      if(posInfo.Symbol() != InpSymbol) continue;
+
+      double curPrice = posInfo.PriceCurrent();
+      double curSL    = posInfo.StopLoss();
+      ulong  ticket   = posInfo.Ticket();
+
+      if(gDir == 1) // BUY position
+      {
+         // TP3 tercapai → close
+         if(gTP3 > 0 && curPrice >= gTP3)
+         {
+            Print("TP3 TERCAPAI! Closing BUY @ ", curPrice);
+            trade.PositionClose(ticket);
+            ResetSignalData();
+            return;
+         }
+
+         // TP2 tercapai → pindah SL ke TP1
+         if(!gHitTP2 && gTP2 > 0 && curPrice >= gTP2)
+         {
+            gHitTP2 = true;
+            if(gTP1 > 0 && curSL < gTP1 - symPoint())
+            {
+               Print("TP2 TERCAPAI → SL pindah ke TP1 (", gTP1, ")");
+               ModifySL(ticket, gTP1);
+            }
+         }
+
+         // TP1 tercapai → pindah SL ke Breakeven
+         if(!gHitTP1 && gTP1 > 0 && curPrice >= gTP1)
+         {
+            gHitTP1 = true;
+            double be = gEntry; // breakeven = entry
+            if(curSL < be - symPoint())
+            {
+               Print("TP1 TERCAPAI → SL pindah ke Breakeven (", be, ")");
+               ModifySL(ticket, be);
+            }
+         }
+      }
+      else if(gDir == -1) // SELL position
+      {
+         // TP3 tercapai → close
+         if(gTP3 > 0 && curPrice <= gTP3)
+         {
+            Print("TP3 TERCAPAI! Closing SELL @ ", curPrice);
+            trade.PositionClose(ticket);
+            ResetSignalData();
+            return;
+         }
+
+         // TP2 tercapai → pindah SL ke TP1
+         if(!gHitTP2 && gTP2 > 0 && curPrice <= gTP2)
+         {
+            gHitTP2 = true;
+            if(gTP1 > 0 && curSL > gTP1 + symPoint())
+            {
+               Print("TP2 TERCAPAI → SL pindah ke TP1 (", gTP1, ")");
+               ModifySL(ticket, gTP1);
+            }
+         }
+
+         // TP1 tercapai → pindah SL ke Breakeven
+         if(!gHitTP1 && gTP1 > 0 && curPrice <= gTP1)
+         {
+            gHitTP1 = true;
+            double be = gEntry;
+            if(curSL > be + symPoint())
+            {
+               Print("TP1 TERCAPAI → SL pindah ke Breakeven (", be, ")");
+               ModifySL(ticket, be);
+            }
+         }
+      }
+   }
 }
 
+//+------------------------------------------------------------------+
+//  TIMER — Poll server untuk sinyal baru
 //+------------------------------------------------------------------+
 void OnTimer()
 {
@@ -71,105 +168,98 @@ void OnTimer()
    PollServer();
 }
 
-void OnTick() {}
-
-//+------------------------------------------------------------------+
-//  Ambil sinyal pending dari server
 //+------------------------------------------------------------------+
 void PollServer()
 {
-   string url = InpServerURL + "/api/mt5/pending"
-              + "?secret=" + InpSecret
-              + "&symbol=" + InpSymbol;
-
+   string url = InpServerURL + "/api/mt5/pending?secret=" + InpSecret + "&symbol=" + InpSymbol;
    char   postData[], result[];
    string headers = "Content-Type: application/json\r\n";
    string resultHeaders;
 
    int httpCode = WebRequest("GET", url, headers, 5000, postData, result, resultHeaders);
-
    if(httpCode == -1)
    {
-      int err = GetLastError();
-      if(!serverReachable)
-         Print("WebRequest gagal (err=", err, "). Pastikan URL ditambahkan di MT5 Options > Expert Advisors > Allow WebRequest");
-      serverReachable = false;
+      static bool warned = false;
+      if(!warned) { Print("WebRequest gagal. Tambahkan URL di MT5 Options > Expert Advisors > Allow WebRequest. Err=", GetLastError()); warned = true; }
       return;
-   }
-
-   if(!serverReachable)
-   {
-      Print("Server terhubung: ", InpServerURL);
-      serverReachable = true;
    }
 
    string json = CharArrayToString(result, 0, WHOLE_ARRAY, CP_UTF8);
 
-   // Tidak ada sinyal
    if(StringFind(json, "\"signal\":null") >= 0 || StringFind(json, "\"signal\": null") >= 0)
       return;
 
-   // Ekstrak blok "signal":{...}
-   string signalJson = ExtractSignalBlock(json);
+   string signalJson = ExtractBlock(json, "signal");
    if(StringLen(signalJson) == 0) return;
 
-   // Parse field
-   int    signalId = (int)JsonGetDouble(signalJson, "id");
-   string action   = JsonGetString(signalJson, "action");
-   double lot      = JsonGetDouble(signalJson, "lot");
-   double entry    = JsonGetDouble(signalJson, "entry");
-   double sl       = JsonGetDouble(signalJson, "sl");
-   double tp1      = JsonGetDouble(signalJson, "tp1");
-   double tp2      = JsonGetDouble(signalJson, "tp2");
-   double tp3      = JsonGetDouble(signalJson, "tp3");
-   string comment  = JsonGetString(signalJson, "comment");
-   if(StringLen(comment) == 0) comment = JsonGetString(signalJson, "setup");
+   int    sigId  = (int)JsonNum(signalJson, "id");
+   string action = JsonStr(signalJson, "action");
+   double lot    = JsonNum(signalJson, "lot");
+   double entry  = JsonNum(signalJson, "entry");
+   double sl     = JsonNum(signalJson, "sl");
+   double tp1    = JsonNum(signalJson, "tp1");
+   double tp2    = JsonNum(signalJson, "tp2");
+   double tp3    = JsonNum(signalJson, "tp3");
+   string setup  = JsonStr(signalJson, "setup");
+   string cmt    = JsonStr(signalJson, "comment");
+   if(StringLen(cmt) == 0) cmt = "ZS " + action + " " + setup;
+   if(StringLen(cmt) > 63) cmt = StringSubstr(cmt, 0, 63); // MT5 batas komentar
 
-   // Validasi dasar
-   if(signalId <= 0 || signalId == lastSignalId) return;
-   if(lot <= 0 || lot > InpMaxLot || entry <= 0)
+   if(sigId <= 0 || sigId == gLastSignalId) return;
+   if(lot <= 0 || lot > InpMaxLot || sl <= 0)
    {
-      Print("Signal tidak valid: lot=", lot, " entry=", entry);
-      AcknowledgeSignal(signalId, 0);
+      Print("Signal tidak valid: lot=", lot, " sl=", sl);
+      AckSignal(sigId, 0);
       return;
    }
 
-   // Pilih TP sesuai setting
-   double targetTP = tp1;
-   if(InpUseTP3 && tp3 > 0) targetTP = tp3;
-   else if(InpUseTP2 && tp2 > 0) targetTP = tp2;
+   Print(">>> SINYAL: ID=", sigId, " | ", action, " | Lot=", lot, " | SL=", sl, " | TP1=", tp1, " | TP2=", tp2, " | TP3=", tp3);
 
-   Print(">>> Sinyal diterima: ID=", signalId,
-         " | ", action,
-         " | Lot=", lot,
-         " | Entry=", entry,
-         " | SL=", sl,
-         " | TP=", targetTP,
-         " | ", comment);
+   // Tutup/hapus posisi lama jika ada
+   if(InpDeleteOnNew) CloseMyPositions();
 
-   // Hapus pending lama jika diaktifkan
-   if(InpDeleteOnNew)
-      DeleteMyPendingOrders();
+   // Market order — entry harga pasar, SL dari sinyal, TP = TP3
+   long ticket = ExecuteMarketOrder(action, lot, sl, tp3, cmt);
+   gLastSignalId = sigId;
 
-   // Eksekusi order
-   long ticket = ExecuteOrder(action, lot, entry, sl, targetTP, comment);
-   lastSignalId = signalId;
+   // Simpan data sinyal untuk trailing stop
+   if(ticket > 0)
+   {
+      gEntry  = (action == "BUY_LIMIT") ? SymbolInfoDouble(InpSymbol, SYMBOL_ASK) : SymbolInfoDouble(InpSymbol, SYMBOL_BID);
+      gSL     = sl;
+      gTP1    = tp1;
+      gTP2    = tp2;
+      gTP3    = tp3;
+      gDir    = (action == "BUY_LIMIT") ? 1 : -1;
+      gHitTP1 = false;
+      gHitTP2 = false;
+   }
 
-   // Konfirmasi ke server
-   AcknowledgeSignal(signalId, ticket);
+   AckSignal(sigId, ticket);
 }
 
 //+------------------------------------------------------------------+
-//  Tempatkan order BUY LIMIT / SELL LIMIT
+//  Eksekusi market order (BUY/SELL at market)
 //+------------------------------------------------------------------+
-long ExecuteOrder(string action, double lot, double entry, double sl, double tp, string comment)
+long ExecuteMarketOrder(string action, double lot, double sl, double tp, string cmt)
 {
    bool ok = false;
 
    if(action == "BUY_LIMIT")
-      ok = trade.BuyLimit(lot, entry, InpSymbol, sl, tp, ORDER_TIME_GTC, 0, comment);
+   {
+      double ask = SymbolInfoDouble(InpSymbol, SYMBOL_ASK);
+      // Normalkan SL/TP ke digit simbol
+      sl = NormalizeDouble(sl, (int)SymbolInfoInteger(InpSymbol, SYMBOL_DIGITS));
+      tp = NormalizeDouble(tp, (int)SymbolInfoInteger(InpSymbol, SYMBOL_DIGITS));
+      ok = trade.Buy(lot, InpSymbol, ask, sl, tp, cmt);
+   }
    else if(action == "SELL_LIMIT")
-      ok = trade.SellLimit(lot, entry, InpSymbol, sl, tp, ORDER_TIME_GTC, 0, comment);
+   {
+      double bid = SymbolInfoDouble(InpSymbol, SYMBOL_BID);
+      sl = NormalizeDouble(sl, (int)SymbolInfoInteger(InpSymbol, SYMBOL_DIGITS));
+      tp = NormalizeDouble(tp, (int)SymbolInfoInteger(InpSymbol, SYMBOL_DIGITS));
+      ok = trade.Sell(lot, InpSymbol, bid, sl, tp, cmt);
+   }
    else
    {
       Print("Action tidak dikenal: ", action);
@@ -179,7 +269,7 @@ long ExecuteOrder(string action, double lot, double entry, double sl, double tp,
    if(ok)
    {
       long ticket = (long)trade.ResultOrder();
-      Print("Order berhasil: ticket=", ticket, " | ", action, " @ ", entry);
+      Print("Market order berhasil: ticket=", ticket, " | ", action, " | SL=", sl, " | TP3=", tp);
       return ticket;
    }
    else
@@ -190,107 +280,105 @@ long ExecuteOrder(string action, double lot, double entry, double sl, double tp,
 }
 
 //+------------------------------------------------------------------+
-//  Kirim konfirmasi ke server setelah order ditempatkan
+//  Modifikasi SL posisi
 //+------------------------------------------------------------------+
-void AcknowledgeSignal(int signalId, long ticket)
+void ModifySL(ulong ticket, double newSL)
 {
-   string url = InpServerURL + "/api/mt5/ack/" + IntegerToString(signalId);
-   string body = "{\"secret\":\"" + InpSecret + "\",\"ticket\":" + IntegerToString(ticket) + "}";
-   string headers = "Content-Type: application/json\r\n";
-   char   postData[], result[];
-   string resultHeaders;
-
-   StringToCharArray(body, postData, 0, StringLen(body), CP_UTF8);
-
-   int httpCode = WebRequest("POST", url, headers, 5000, postData, result, resultHeaders);
-   if(httpCode == -1)
-      Print("ACK gagal untuk signal ", signalId, " | err=", GetLastError());
+   newSL = NormalizeDouble(newSL, (int)SymbolInfoInteger(InpSymbol, SYMBOL_DIGITS));
+   if(!posInfo.SelectByTicket(ticket)) return;
+   double curTP = posInfo.TakeProfit();
+   if(trade.PositionModify(ticket, newSL, curTP))
+      Print("SL berhasil diubah ke ", newSL, " untuk ticket ", ticket);
    else
-      Print("ACK sukses: signal=", signalId, " ticket=", ticket);
+      Print("Gagal modifikasi SL: ", trade.ResultRetcodeDescription());
 }
 
 //+------------------------------------------------------------------+
-//  Hapus semua pending order milik EA ini
+//  Reset data sinyal setelah posisi tertutup
 //+------------------------------------------------------------------+
-void DeleteMyPendingOrders()
+void ResetSignalData()
 {
-   int deleted = 0;
-   for(int i = OrdersTotal() - 1; i >= 0; i--)
+   gEntry = 0; gSL = 0; gTP1 = 0; gTP2 = 0; gTP3 = 0;
+   gDir = 0; gHitTP1 = false; gHitTP2 = false;
+   Print("Posisi selesai. EA menunggu sinyal berikutnya.");
+}
+
+//+------------------------------------------------------------------+
+//  Tutup semua posisi milik EA ini
+//+------------------------------------------------------------------+
+void CloseMyPositions()
+{
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
    {
-      ulong ticket = OrderGetTicket(i);
-      if(ticket == 0) continue;
-      if(OrderGetInteger(ORDER_MAGIC) == InpMagicNumber &&
-         OrderGetString(ORDER_SYMBOL) == InpSymbol)
+      if(!posInfo.SelectByIndex(i)) continue;
+      if(posInfo.Magic() == InpMagicNumber && posInfo.Symbol() == InpSymbol)
       {
-         if(trade.OrderDelete(ticket))
-            deleted++;
+         Print("Menutup posisi lama: ticket=", posInfo.Ticket());
+         trade.PositionClose(posInfo.Ticket());
       }
    }
-   if(deleted > 0)
-      Print("Deleted ", deleted, " pending order lama.");
+   ResetSignalData();
 }
 
 //+------------------------------------------------------------------+
-//  JSON Helpers - Ekstrak blok "signal":{...}
+//  Kirim ACK ke server
 //+------------------------------------------------------------------+
-string ExtractSignalBlock(string json)
+void AckSignal(int sigId, long ticket)
 {
-   string search = "\"signal\":";
+   string url  = InpServerURL + "/api/mt5/ack/" + IntegerToString(sigId);
+   string body = "{\"secret\":\"" + InpSecret + "\",\"ticket\":" + IntegerToString(ticket) + "}";
+   string headers = "Content-Type: application/json\r\n";
+   char postData[], result[];
+   string resHeaders;
+   StringToCharArray(body, postData, 0, StringLen(body), CP_UTF8);
+   int code = WebRequest("POST", url, headers, 5000, postData, result, resHeaders);
+   if(code == -1) Print("ACK gagal untuk signal ", sigId);
+   else Print("ACK sukses: signal=", sigId, " ticket=", ticket);
+}
+
+//+------------------------------------------------------------------+
+//  Helpers
+//+------------------------------------------------------------------+
+double symPoint() { return SymbolInfoDouble(InpSymbol, SYMBOL_POINT); }
+
+string ExtractBlock(string json, string key)
+{
+   string search = "\"" + key + "\":";
    int pos = StringFind(json, search);
    if(pos < 0) return "";
    pos += StringLen(search);
-
-   // Skip spasi
    while(pos < StringLen(json) && StringSubstr(json, pos, 1) == " ") pos++;
-
    if(StringSubstr(json, pos, 1) != "{") return "";
-
    int depth = 0, end = pos;
    while(end < StringLen(json))
    {
       string ch = StringSubstr(json, end, 1);
-      if(ch == "{")      depth++;
+      if(ch == "{") depth++;
       else if(ch == "}") { depth--; if(depth == 0) { end++; break; } }
       end++;
    }
    return StringSubstr(json, pos, end - pos);
 }
 
-//+------------------------------------------------------------------+
-//  Ekstrak string value dari JSON
-//+------------------------------------------------------------------+
-string JsonGetString(string json, string key)
+string JsonStr(string json, string key)
 {
    string search = "\"" + key + "\":\"";
    int pos = StringFind(json, search);
    if(pos < 0) return "";
    pos += StringLen(search);
    int end = pos;
-   while(end < StringLen(json))
-   {
-      if(StringSubstr(json, end, 1) == "\"" && (end == 0 || StringSubstr(json, end - 1, 1) != "\\"))
-         break;
-      end++;
-   }
+   while(end < StringLen(json) && StringSubstr(json, end, 1) != "\"") end++;
    return StringSubstr(json, pos, end - pos);
 }
 
-//+------------------------------------------------------------------+
-//  Ekstrak numeric value dari JSON
-//+------------------------------------------------------------------+
-double JsonGetDouble(string json, string key)
+double JsonNum(string json, string key)
 {
    string search = "\"" + key + "\":";
    int pos = StringFind(json, search);
    if(pos < 0) return 0;
    pos += StringLen(search);
-
-   // Skip spasi
    while(pos < StringLen(json) && StringSubstr(json, pos, 1) == " ") pos++;
-
-   // null
    if(StringSubstr(json, pos, 4) == "null") return 0;
-
    int end = pos;
    while(end < StringLen(json))
    {
@@ -299,7 +387,6 @@ double JsonGetDouble(string json, string key)
       end++;
    }
    string val = StringSubstr(json, pos, end - pos);
-   // Hapus tanda kutip jika ada (angka kadang dikutip karena numeric dari DB)
    StringReplace(val, "\"", "");
    return StringToDouble(val);
 }
