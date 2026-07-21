@@ -20,7 +20,7 @@
 input group "=== SERVER ==="
 input string InpServerURL    = "https://YOUR-APP.replit.app"; // URL Server Bridge
 input string InpSecret       = "ZS909506";                    // Webhook Secret
-input string InpSymbol       = "XAUUSD";                      // Symbol MT5
+input string InpSymbol       = "XAUUSDc";                     // Symbol MT5
 input int    InpPollInterval = 5;                              // Poll interval (detik)
 
 input group "=== ORDER ==="
