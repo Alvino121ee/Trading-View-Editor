@@ -24,6 +24,9 @@ input int    InpCooldownBars      = 2;
 input group "=== SESSION FILTER WIB ==="
 input bool   InpUseWIBFilter      = true;
 
+input group "=== ENTRY MODE ==="
+input bool   InpReverseMode        = false; // Reverse Mode: BUY→SELL, SELL→BUY
+
 input group "=== TP / SL (Dollar Fixed) ==="
 input double InpSLDollars         = 5.0;   // Stop Loss dalam Dolar dari entry
 input double InpTP1Dollars        = 5.0;   // Take Profit 1 dalam Dolar dari entry
@@ -627,12 +630,29 @@ void CheckSignal(int currentBars)
    else if(buyValid  && !gPeakBlock)  { finalDir =  1; setupClass = "BUY_NORMAL";  }
    else if(sellValid && !gDeepBlock)  { finalDir = -1; setupClass = "SELL_NORMAL"; }
 
+   // ---- Reverse Mode: balik arah signal ----
+   if(InpReverseMode && finalDir != 0)
+   {
+      finalDir    = -finalDir;
+      setupClass  = setupClass + "_REV";
+   }
+
    // Update panel predict text even if no signal fires
    if(finalDir==0)
    {
-      if(gBuyScore>=gSellScore+2) gPanelStatus="PREDICT BUY";
-      else if(gSellScore>=gBuyScore+2) gPanelStatus="PREDICT SELL";
-      else gPanelStatus="WAIT";
+      if(InpReverseMode)
+      {
+         // Balik predict juga
+         if(gBuyScore>=gSellScore+2)      gPanelStatus="PREDICT SELL";
+         else if(gSellScore>=gBuyScore+2) gPanelStatus="PREDICT BUY";
+         else                             gPanelStatus="WAIT";
+      }
+      else
+      {
+         if(gBuyScore>=gSellScore+2)      gPanelStatus="PREDICT BUY";
+         else if(gSellScore>=gBuyScore+2) gPanelStatus="PREDICT SELL";
+         else                             gPanelStatus="WAIT";
+      }
       gPanelSetup = "-";
       return;
    }
@@ -795,6 +815,11 @@ void DrawPanel()
    color setupCol = (StringFind(gPanelSetup,"BUY")>=0) ? clrLimeGreen : (StringFind(gPanelSetup,"SELL")>=0) ? clrTomato : clrSilver;
    PanelLabel("L_SETUP",  "SETUP     :", lx, row, clrSilver, fs);
    PanelLabel("V_SETUP",   " "+gPanelSetup, vx, row, setupCol, fs);
+   row += lh;
+
+   // REVERSE MODE indicator
+   PanelLabel("L_REV","REVERSE   :", lx, row, clrSilver, fs);
+   PanelLabel("V_REV", InpReverseMode?" ON  ⟲":" OFF", vx, row, InpReverseMode?clrOrange:C'70,70,90', fs);
    row += lh;
 
    // Separator
