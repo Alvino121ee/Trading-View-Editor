@@ -24,18 +24,13 @@ input int    InpCooldownBars      = 2;
 input group "=== SESSION FILTER WIB ==="
 input bool   InpUseWIBFilter      = true;
 
-input group "=== TP / SL ==="
-input double InpPointSize         = 0.01;
-input int    InpTP1Points         = 200;
-input int    InpTP2Points         = 600;
-input int    InpTP3Points         = 900;
-input string InpSLMode            = "ADAPTIVE";
-input int    InpATRLen            = 14;
-input double InpATRSLMult         = 1.45;
-input int    InpMinSLPoints       = 650;
-input int    InpMaxSLPoints       = 900;
-input int    InpFixedSLPoints     = 800;
-input int    InpMaxHoldMinutes    = 180;
+input group "=== TP / SL (Dollar Fixed) ==="
+input double InpSLDollars         = 5.0;   // Stop Loss dalam Dolar dari entry
+input double InpTP1Dollars        = 5.0;   // Take Profit 1 dalam Dolar dari entry
+input double InpTP2Dollars        = 10.0;  // Take Profit 2 dalam Dolar dari entry
+input double InpTP3Dollars        = 15.0;  // Take Profit 3 dalam Dolar dari entry
+input int    InpATRLen            = 14;    // ATR period (untuk scoring, bukan SL)
+input int    InpMaxHoldMinutes    = 180;   // Max hold time (menit)
 
 input group "=== EMA TREND ==="
 input int    InpEmaFastLen        = 20;
