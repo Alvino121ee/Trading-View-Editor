@@ -92,6 +92,12 @@ input int    InpSRMediumMinSL        = 420;
 input int    InpSRMediumMaxSL        = 760;
 input int    InpSRMediumFixedSL      = 560;
 
+input group "=== PEAK / DEEP FILTER ==="
+input bool   InpBlockBuyAtPeak    = true;  // Block BUY jika RSI >= threshold (harga di pucuk)
+input bool   InpBlockSellAtDeep   = true;  // Block SELL jika RSI <= threshold (sudah turun terlalu dalam)
+input int    InpOverboughtRSI     = 70;    // RSI threshold pucuk (block buy)
+input int    InpOversoldRSI       = 30;    // RSI threshold oversold (block sell)
+
 input group "=== ORDER ==="
 input string InpSymbol            = "XAUUSDc";
 input int    InpMagicNumber       = 909506;
@@ -153,6 +159,8 @@ bool   gSRBlockBuy     = false;
 bool   gSRBlockSell    = false;
 bool   gPrecBlockBuy   = false;
 bool   gPrecBlockSell  = false;
+bool   gPeakBlock      = false;  // RSI overbought → block buy
+bool   gDeepBlock      = false;  // RSI oversold   → block sell
 bool   gSessionOK      = false;
 int    gMinQuality     = 82;
 int    gWinCount       = 0;
@@ -594,30 +602,30 @@ void CheckSignal(int currentBars)
    bool doSRBuy  = allowBuy &&(buyStrongSR||buyMediumSR) &&(!(sellStrongSR||sellMediumSR)||gBuyScore>=gSellScore+InpScoreGap);
    bool doSRSell = allowSell&&(sellStrongSR||sellMediumSR)&&(!(buyStrongSR||buyMediumSR) ||gSellScore>=gBuyScore+InpScoreGap);
 
-   // Final signal
-   int    finalDir=0;
-   double finalTP1Pts=0,finalTP2Pts=0,finalTP3Pts=0,finalSLPts=0;
-   string setupClass="";
+   // ---- Peak / Deep filter (update global untuk panel) ----
+   gPeakBlock = InpBlockBuyAtPeak  && rsiVal >= InpOverboughtRSI;   // RSI terlalu tinggi = pucuk
+   gDeepBlock = InpBlockSellAtDeep && rsiVal <= InpOversoldRSI;     // RSI terlalu rendah = sudah terlalu turun
 
-   double atrSLRaw    = atrVal/InpPointSize*InpATRSLMult;
-   double normalSLPts = (InpSLMode=="ADAPTIVE")?MathMin(MathMax(atrSLRaw,InpMinSLPoints),InpMaxSLPoints):InpFixedSLPoints;
-   double srStrongSLPts=(InpSRStrongSLMode=="ADAPTIVE")?MathMin(MathMax(atrVal/InpPointSize*InpSRStrongATRSLMult,InpSRStrongMinSL),InpSRStrongMaxSL):InpSRStrongFixedSL;
-   double srMediumSLPts=(InpSRMediumSLMode=="ADAPTIVE")?MathMin(MathMax(atrVal/InpPointSize*InpSRMediumATRSLMult,InpSRMediumMinSL),InpSRMediumMaxSL):InpSRMediumFixedSL;
+   // ---- Dollar-based SL/TP → konversi ke jarak harga ----
+   // Rumus: dollarPerUnit = lot × (tickValue / tickSize)
+   // Untuk XAUUSD 0.01 lot: tickVal≈0.01, tickSz=0.01 → dollarPerUnit = 0.01×(0.01/0.01)×100 = 1 $/unit
+   double lot          = MathMin(InpLot, InpMaxLot);
+   double tickVal      = SymbolInfoDouble(InpSymbol, SYMBOL_TRADE_TICK_VALUE);
+   double tickSz       = SymbolInfoDouble(InpSymbol, SYMBOL_TRADE_TICK_SIZE);
+   double dollarPerUnit= (tickSz > 0 && tickVal > 0) ? lot * (tickVal / tickSz) : lot;
+   double slPriceDist  = (dollarPerUnit > 0) ? InpSLDollars  / dollarPerUnit : 5.0;
+   double tp1PriceDist = (dollarPerUnit > 0) ? InpTP1Dollars / dollarPerUnit : 5.0;
+   double tp2PriceDist = (dollarPerUnit > 0) ? InpTP2Dollars / dollarPerUnit : 10.0;
+   double tp3PriceDist = (dollarPerUnit > 0) ? InpTP3Dollars / dollarPerUnit : 15.0;
 
-   if(doSRBuy)
-   {
-      finalDir=1;
-      if(buyStrongSR){finalTP1Pts=InpSRStrongTP1Pts;finalTP2Pts=InpSRStrongTP2Pts;finalTP3Pts=InpSRStrongTP3Pts;finalSLPts=srStrongSLPts;setupClass="BUY_KUAT_SR";}
-      else           {finalTP1Pts=InpSRMediumTP1Pts;finalTP2Pts=InpSRMediumTP2Pts;finalTP3Pts=InpSRMediumTP3Pts;finalSLPts=srMediumSLPts;setupClass="BUY_SEDANG_SR";}
-   }
-   else if(doSRSell)
-   {
-      finalDir=-1;
-      if(sellStrongSR){finalTP1Pts=InpSRStrongTP1Pts;finalTP2Pts=InpSRStrongTP2Pts;finalTP3Pts=InpSRStrongTP3Pts;finalSLPts=srStrongSLPts;setupClass="SELL_KUAT_SR";}
-      else            {finalTP1Pts=InpSRMediumTP1Pts;finalTP2Pts=InpSRMediumTP2Pts;finalTP3Pts=InpSRMediumTP3Pts;finalSLPts=srMediumSLPts;setupClass="SELL_SEDANG_SR";}
-   }
-   else if(buyValid)  { finalDir=1;  finalTP1Pts=InpTP1Points;finalTP2Pts=InpTP2Points;finalTP3Pts=InpTP3Points;finalSLPts=normalSLPts;setupClass="BUY_NORMAL"; }
-   else if(sellValid) { finalDir=-1; finalTP1Pts=InpTP1Points;finalTP2Pts=InpTP2Points;finalTP3Pts=InpTP3Points;finalSLPts=normalSLPts;setupClass="SELL_NORMAL"; }
+   // ---- Final signal (semua setup pakai dollar SL/TP) ----
+   int    finalDir   = 0;
+   string setupClass = "";
+
+   if     (doSRBuy   && !gPeakBlock)  { finalDir =  1; setupClass = buyStrongSR  ? "BUY_KUAT_SR"  : "BUY_SEDANG_SR";  }
+   else if(doSRSell  && !gDeepBlock)  { finalDir = -1; setupClass = sellStrongSR ? "SELL_KUAT_SR" : "SELL_SEDANG_SR"; }
+   else if(buyValid  && !gPeakBlock)  { finalDir =  1; setupClass = "BUY_NORMAL";  }
+   else if(sellValid && !gDeepBlock)  { finalDir = -1; setupClass = "SELL_NORMAL"; }
 
    // Update panel predict text even if no signal fires
    if(finalDir==0)
@@ -629,10 +637,8 @@ void CheckSignal(int currentBars)
       return;
    }
 
-   // Execute
+   // ---- Execute ----
    int digits = (int)SymbolInfoInteger(InpSymbol, SYMBOL_DIGITS);
-   double slPrice=finalSLPts*InpPointSize, tp1Price=finalTP1Pts*InpPointSize;
-   double tp2Price=finalTP2Pts*InpPointSize, tp3Price=finalTP3Pts*InpPointSize;
    double entryPrice, sl, tp1, tp2, tp3;
    bool ok=false;
    int score=(finalDir==1)?gBuyScore:gSellScore;
@@ -640,26 +646,26 @@ void CheckSignal(int currentBars)
    if(finalDir==1)
    {
       entryPrice=SymbolInfoDouble(InpSymbol,SYMBOL_ASK);
-      sl =NormalizeDouble(entryPrice-slPrice, digits);
-      tp1=NormalizeDouble(entryPrice+tp1Price,digits);
-      tp2=NormalizeDouble(entryPrice+tp2Price,digits);
-      tp3=NormalizeDouble(entryPrice+tp3Price,digits);
+      sl =NormalizeDouble(entryPrice - slPriceDist,  digits);
+      tp1=NormalizeDouble(entryPrice + tp1PriceDist, digits);
+      tp2=NormalizeDouble(entryPrice + tp2PriceDist, digits);
+      tp3=NormalizeDouble(entryPrice + tp3PriceDist, digits);
       if(InpDeleteOnNew) CloseMyPositions();
       string cmt=StringFormat("ZS V10 %s s%d",setupClass,score);
       if(StringLen(cmt)>63) cmt=StringSubstr(cmt,0,63);
-      ok=trade.Buy(MathMin(InpLot,InpMaxLot),InpSymbol,entryPrice,sl,tp3,cmt);
+      ok=trade.Buy(lot,InpSymbol,entryPrice,sl,tp3,cmt);
    }
    else
    {
       entryPrice=SymbolInfoDouble(InpSymbol,SYMBOL_BID);
-      sl =NormalizeDouble(entryPrice+slPrice, digits);
-      tp1=NormalizeDouble(entryPrice-tp1Price,digits);
-      tp2=NormalizeDouble(entryPrice-tp2Price,digits);
-      tp3=NormalizeDouble(entryPrice-tp3Price,digits);
+      sl =NormalizeDouble(entryPrice + slPriceDist,  digits);
+      tp1=NormalizeDouble(entryPrice - tp1PriceDist, digits);
+      tp2=NormalizeDouble(entryPrice - tp2PriceDist, digits);
+      tp3=NormalizeDouble(entryPrice - tp3PriceDist, digits);
       if(InpDeleteOnNew) CloseMyPositions();
       string cmt=StringFormat("ZS V10 %s s%d",setupClass,score);
       if(StringLen(cmt)>63) cmt=StringSubstr(cmt,0,63);
-      ok=trade.Sell(MathMin(InpLot,InpMaxLot),InpSymbol,entryPrice,sl,tp3,cmt);
+      ok=trade.Sell(lot,InpSymbol,entryPrice,sl,tp3,cmt);
    }
 
    if(ok)
@@ -853,8 +859,12 @@ void DrawPanel()
    PanelLabel("L_SR","SR STATUS :", px, row, clrSilver, fs);
    PanelLabel("V_SR"," "+gSRStatus, px-130, row, srCol, fs); row+=lh;
 
-   string blockTxt = (!gSRBlockBuy&&!gSRBlockSell&&!gPrecBlockBuy&&!gPrecBlockSell)?"OK":
-                     (gSRBlockBuy||gPrecBlockBuy)?"BLOCK BUY":"BLOCK SELL";
+   bool anyBlockBuy  = gSRBlockBuy  || gPrecBlockBuy  || gPeakBlock;
+   bool anyBlockSell = gSRBlockSell || gPrecBlockSell || gDeepBlock;
+   string blockTxt = (!anyBlockBuy && !anyBlockSell) ? "OK" :
+                     (anyBlockBuy && anyBlockSell)   ? "BLOCK BOTH" :
+                     anyBlockBuy                     ? (gPeakBlock?"PEAK(RSI)":"BLOCK BUY") :
+                                                       (gDeepBlock?"DEEP(RSI)":"BLOCK SELL");
    color blockCol  = (blockTxt=="OK")?clrLimeGreen:clrTomato;
    PanelLabel("L_BL","SR BLOCK  :", px, row, clrSilver, fs);
    PanelLabel("V_BL"," "+blockTxt, px-130, row, blockCol, fs); row+=lh;
