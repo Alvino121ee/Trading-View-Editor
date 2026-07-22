@@ -10,6 +10,7 @@
 
 #include <Trade\Trade.mqh>
 #include <Trade\PositionInfo.mqh>
+#include <Trade\OrderInfo.mqh>
 
 //==================== SIGNAL MODE ====================//
 input group "=== SIGNAL MODE ==="
@@ -111,6 +112,11 @@ input bool   InpTrailingEnabled   = true;
 input bool   InpDeleteOnNew       = true;
 input bool   InpEnabled           = true;
 
+input group "=== LAYER ENTRY ==="
+input bool   InpLayerEnabled      = true;   // Aktifkan layer entry (limit + stop di tiap sisi)
+input int    InpLayerCount        = 1;      // Jumlah layer tiap sisi (misal 1 = 1 BuyLimit + 1 BuyStop)
+input double InpLayerDollars      = 1.0;    // Jarak antar layer dalam Dolar
+
 input group "=== PANEL ==="
 input bool   InpShowPanel         = true;       // Tampilkan panel status
 input int    InpPanelX            = 20;         // Posisi X panel (dari kanan)
@@ -126,6 +132,7 @@ int hRsi, hAdx, hAtr, hBB;
 //==================== TRADE OBJECTS ====================//
 CTrade        trade;
 CPositionInfo posInfo;
+COrderInfo    orderInfo;
 
 //==================== ACTIVE TRADE STATE ====================//
 double gEntry=0, gSL=0, gTP1=0, gTP2=0, gTP3=0;
@@ -297,6 +304,16 @@ void UpdateSRLevels(double atrVal)
 //+------------------------------------------------------------------+
 // Trade helpers
 //+------------------------------------------------------------------+
+void CancelPendingOrders()
+{
+   for(int i = OrdersTotal()-1; i >= 0; i--)
+   {
+      if(!orderInfo.SelectByIndex(i)) continue;
+      if(orderInfo.Magic()==InpMagicNumber && orderInfo.Symbol()==InpSymbol)
+         trade.OrderDelete(orderInfo.Ticket());
+   }
+}
+
 void CloseMyPositions()
 {
    for(int i = PositionsTotal()-1; i >= 0; i--)
@@ -304,6 +321,53 @@ void CloseMyPositions()
       if(!posInfo.SelectByIndex(i)) continue;
       if(posInfo.Magic()==InpMagicNumber && posInfo.Symbol()==InpSymbol)
          trade.PositionClose(posInfo.Ticket());
+   }
+   CancelPendingOrders();
+}
+
+// Pasang layer pending orders setelah market order utama
+void PlaceLayers(int dir, double marketEntry, double sl, double tp3,
+                 double lot, string baseCmt, double layerDist, int digits)
+{
+   if(!InpLayerEnabled || InpLayerCount <= 0 || layerDist <= 0) return;
+   for(int i = 1; i <= InpLayerCount; i++)
+   {
+      double offset = i * layerDist;
+      string cmt = StringFormat("%s L%d", baseCmt, i);
+      if(StringLen(cmt) > 63) cmt = StringSubstr(cmt, 0, 63);
+
+      if(dir == 1) // BUY signal
+      {
+         // Buy Limit — di bawah market (entry jika harga turun dulu)
+         double blPrice = NormalizeDouble(marketEntry - offset, digits);
+         if(!trade.BuyLimit(lot, blPrice, InpSymbol, sl, tp3, ORDER_TIME_GTC, 0, cmt+"_BL"))
+            Print("BuyLimit L",i," GAGAL: ", trade.ResultRetcodeDescription());
+         else
+            Print("BuyLimit L",i," @ ", blPrice);
+
+         // Buy Stop — di atas market (entry jika harga naik terus)
+         double bsPrice = NormalizeDouble(marketEntry + offset, digits);
+         if(!trade.BuyStop(lot, bsPrice, InpSymbol, sl, tp3, ORDER_TIME_GTC, 0, cmt+"_BS"))
+            Print("BuyStop  L",i," GAGAL: ", trade.ResultRetcodeDescription());
+         else
+            Print("BuyStop  L",i," @ ", bsPrice);
+      }
+      else // SELL signal
+      {
+         // Sell Limit — di atas market (entry jika harga naik dulu)
+         double slPrice = NormalizeDouble(marketEntry + offset, digits);
+         if(!trade.SellLimit(lot, slPrice, InpSymbol, sl, tp3, ORDER_TIME_GTC, 0, cmt+"_SL"))
+            Print("SellLimit L",i," GAGAL: ", trade.ResultRetcodeDescription());
+         else
+            Print("SellLimit L",i," @ ", slPrice);
+
+         // Sell Stop — di bawah market (entry jika harga turun terus)
+         double ssPrice = NormalizeDouble(marketEntry - offset, digits);
+         if(!trade.SellStop(lot, ssPrice, InpSymbol, sl, tp3, ORDER_TIME_GTC, 0, cmt+"_SS"))
+            Print("SellStop  L",i," GAGAL: ", trade.ResultRetcodeDescription());
+         else
+            Print("SellStop  L",i," @ ", ssPrice);
+      }
    }
 }
 
@@ -330,6 +394,7 @@ bool HasActivePosition()
 
 void ResetTrade()
 {
+   CancelPendingOrders();   // cancel semua layer pending yang belum trigger
    gDir=0; gHitTP1=false; gHitTP2=false;
    gEntry=0; gSL=0; gTP1=0; gTP2=0; gTP3=0;
    gLastExitBar = iBars(InpSymbol, PERIOD_M1) - 1;
@@ -344,26 +409,58 @@ void ResetTrade()
 void ManageTrailingStop()
 {
    if(!InpTrailingEnabled || gDir==0) return;
+
+   double pt  = SymbolInfoDouble(InpSymbol, SYMBOL_POINT);
+   // Gunakan harga pasar saat ini (bukan posInfo.PriceCurrent) agar konsisten
+   double now = (gDir==1) ? SymbolInfoDouble(InpSymbol, SYMBOL_BID)
+                           : SymbolInfoDouble(InpSymbol, SYMBOL_ASK);
+
+   // ---- Deteksi level TP (dilakukan SEKALI, bukan per-posisi) ----
+   if(gDir == 1)
+   {
+      if(gTP3>0 && now>=gTP3)
+      {
+         Print("TP3 TERCAPAI! Close ALL BUY + cancel pending");
+         gLossCount--; gWinCount++;
+         CloseMyPositions(); // tutup semua posisi + cancel semua pending
+         ResetTrade();
+         return;
+      }
+      if(!gHitTP2 && gTP2>0 && now>=gTP2) { gHitTP2=true; Print("TP2 hit → SL semua posisi ke TP1"); }
+      if(!gHitTP1 && gTP1>0 && now>=gTP1) { gHitTP1=true; Print("TP1 hit → SL semua posisi ke BE"); }
+   }
+   else
+   {
+      if(gTP3>0 && now<=gTP3)
+      {
+         Print("TP3 TERCAPAI! Close ALL SELL + cancel pending");
+         gLossCount--; gWinCount++;
+         CloseMyPositions();
+         ResetTrade();
+         return;
+      }
+      if(!gHitTP2 && gTP2>0 && now<=gTP2) { gHitTP2=true; Print("TP2 hit → SL semua posisi ke TP1"); }
+      if(!gHitTP1 && gTP1>0 && now<=gTP1) { gHitTP1=true; Print("TP1 hit → SL semua posisi ke BE"); }
+   }
+
+   // ---- Terapkan SL ke SEMUA posisi aktif ----
    for(int i = PositionsTotal()-1; i >= 0; i--)
    {
       if(!posInfo.SelectByIndex(i)) continue;
       if(posInfo.Magic()!=InpMagicNumber || posInfo.Symbol()!=InpSymbol) continue;
-      double curPrice = posInfo.PriceCurrent();
-      double curSL    = posInfo.StopLoss();
-      ulong  ticket   = posInfo.Ticket();
-      double pt       = SymbolInfoDouble(InpSymbol, SYMBOL_POINT);
+
+      double curSL = posInfo.StopLoss();
+      ulong  ticket = posInfo.Ticket();
 
       if(gDir == 1)
       {
-         if(gTP3>0 && curPrice>=gTP3) { Print("TP3 TERCAPAI! Closing BUY"); gLossCount--; gWinCount++; trade.PositionClose(ticket); ResetTrade(); return; }
-         if(!gHitTP2 && gTP2>0 && curPrice>=gTP2) { gHitTP2=true; if(gTP1>0 && curSL<gTP1-pt){ Print("TP2 hit → SL ke TP1"); ModifySL(ticket,gTP1); } }
-         if(!gHitTP1 && gTP1>0 && curPrice>=gTP1) { gHitTP1=true; if(curSL<gEntry-pt){ Print("TP1 hit → SL ke BE"); ModifySL(ticket,gEntry); } }
+         if(gHitTP2 && gTP1>0 && curSL < gTP1-pt)        ModifySL(ticket, gTP1);
+         else if(gHitTP1 && curSL < gEntry-pt)             ModifySL(ticket, gEntry);
       }
-      else if(gDir == -1)
+      else
       {
-         if(gTP3>0 && curPrice<=gTP3) { Print("TP3 TERCAPAI! Closing SELL"); gLossCount--; gWinCount++; trade.PositionClose(ticket); ResetTrade(); return; }
-         if(!gHitTP2 && gTP2>0 && curPrice<=gTP2) { gHitTP2=true; if(gTP1>0 && curSL>gTP1+pt){ Print("TP2 hit → SL ke TP1"); ModifySL(ticket,gTP1); } }
-         if(!gHitTP1 && gTP1>0 && curPrice<=gTP1) { gHitTP1=true; if(curSL>gEntry+pt){ Print("TP1 hit → SL ke BE"); ModifySL(ticket,gEntry); } }
+         if(gHitTP2 && gTP1>0 && curSL > gTP1+pt)        ModifySL(ticket, gTP1);
+         else if(gHitTP1 && curSL > gEntry+pt)             ModifySL(ticket, gEntry);
       }
    }
 }
@@ -663,6 +760,9 @@ void CheckSignal(int currentBars)
    bool ok=false;
    int score=(finalDir==1)?gBuyScore:gSellScore;
 
+   // Jarak layer dalam harga (rumus sama dengan SL/TP)
+   double layerPriceDist = (dollarPerUnit > 0) ? InpLayerDollars / dollarPerUnit : 0;
+
    if(finalDir==1)
    {
       entryPrice=SymbolInfoDouble(InpSymbol,SYMBOL_ASK);
@@ -670,10 +770,11 @@ void CheckSignal(int currentBars)
       tp1=NormalizeDouble(entryPrice + tp1PriceDist, digits);
       tp2=NormalizeDouble(entryPrice + tp2PriceDist, digits);
       tp3=NormalizeDouble(entryPrice + tp3PriceDist, digits);
-      if(InpDeleteOnNew) CloseMyPositions();
+      if(InpDeleteOnNew) CloseMyPositions(); // tutup posisi lama + cancel pending lama
       string cmt=StringFormat("ZS V10 %s s%d",setupClass,score);
       if(StringLen(cmt)>63) cmt=StringSubstr(cmt,0,63);
       ok=trade.Buy(lot,InpSymbol,entryPrice,sl,tp3,cmt);
+      if(ok) PlaceLayers(1, entryPrice, sl, tp3, lot, cmt, layerPriceDist, digits);
    }
    else
    {
@@ -686,6 +787,7 @@ void CheckSignal(int currentBars)
       string cmt=StringFormat("ZS V10 %s s%d",setupClass,score);
       if(StringLen(cmt)>63) cmt=StringSubstr(cmt,0,63);
       ok=trade.Sell(lot,InpSymbol,entryPrice,sl,tp3,cmt);
+      if(ok) PlaceLayers(-1, entryPrice, sl, tp3, lot, cmt, layerPriceDist, digits);
    }
 
    if(ok)
@@ -697,8 +799,8 @@ void CheckSignal(int currentBars)
       gLossCount++; // akan di-decrement jika win (TP3 hit)
       gPanelStatus=(finalDir==1)?"BUY ACTIVE":"SELL ACTIVE";
       gPanelSetup=setupClass;
-      Print(StringFormat(">>> %s | %s | Score=%d | Entry=%.2f | SL=%.2f | TP1=%.2f | TP2=%.2f | TP3=%.2f",
-            finalDir==1?"BUY":"SELL",setupClass,score,entryPrice,sl,tp1,tp2,tp3));
+      Print(StringFormat(">>> %s | %s | Score=%d | Entry=%.2f | SL=%.2f | TP1=%.2f | TP2=%.2f | TP3=%.2f | LayerDist=%.2f x%d",
+            finalDir==1?"BUY":"SELL",setupClass,score,entryPrice,sl,tp1,tp2,tp3,layerPriceDist,InpLayerCount));
    }
    else
       Print("Order GAGAL: ",trade.ResultRetcodeDescription()," (",trade.ResultRetcode(),")");
