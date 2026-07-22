@@ -113,9 +113,8 @@ input bool   InpDeleteOnNew       = true;
 input bool   InpEnabled           = true;
 
 input group "=== LAYER ENTRY ==="
-input bool   InpLayerEnabled      = true;   // Aktifkan layer entry (limit + stop di tiap sisi)
-input int    InpLayerCount        = 1;      // Jumlah layer tiap sisi (misal 1 = 1 BuyLimit + 1 BuyStop)
-input double InpLayerDollars      = 1.0;    // Jarak antar layer dalam Dolar
+input bool   InpLayerEnabled      = true;   // Aktifkan layer entry (isi penuh entry→TP3 dan entry→SL)
+input double InpLayerDollars      = 1.0;    // Jarak antar layer dalam Dolar (default $1)
 
 input group "=== PANEL ==="
 input bool   InpShowPanel         = true;       // Tampilkan panel status
@@ -326,47 +325,78 @@ void CloseMyPositions()
 }
 
 // Pasang layer pending orders setelah market order utama
+// Isi layer otomatis dari entry sampai TP3 (arah profit) dan entry sampai SL (arah loss)
+// Jarak tiap layer = layerDist (dalam harga, sudah dikonversi dari InpLayerDollars)
 void PlaceLayers(int dir, double marketEntry, double sl, double tp3,
                  double lot, string baseCmt, double layerDist, int digits)
 {
-   if(!InpLayerEnabled || InpLayerCount <= 0 || layerDist <= 0) return;
-   for(int i = 1; i <= InpLayerCount; i++)
+   if(!InpLayerEnabled || layerDist <= 0) return;
+
+   string cmt;
+   int i;
+
+   if(dir == 1) // ======= BUY =======
    {
-      double offset = i * layerDist;
-      string cmt = StringFormat("%s L%d", baseCmt, i);
-      if(StringLen(cmt) > 63) cmt = StringSubstr(cmt, 0, 63);
-
-      if(dir == 1) // BUY signal
+      // --- BuyStop: entry+$1, entry+$2, ... sampai sebelum TP3 ---
+      i = 1;
+      while(true)
       {
-         // Buy Limit — di bawah market (entry jika harga turun dulu)
-         double blPrice = NormalizeDouble(marketEntry - offset, digits);
-         if(!trade.BuyLimit(lot, blPrice, InpSymbol, sl, tp3, ORDER_TIME_GTC, 0, cmt+"_BL"))
-            Print("BuyLimit L",i," GAGAL: ", trade.ResultRetcodeDescription());
-         else
-            Print("BuyLimit L",i," @ ", blPrice);
-
-         // Buy Stop — di atas market (entry jika harga naik terus)
-         double bsPrice = NormalizeDouble(marketEntry + offset, digits);
-         if(!trade.BuyStop(lot, bsPrice, InpSymbol, sl, tp3, ORDER_TIME_GTC, 0, cmt+"_BS"))
+         double bsPrice = NormalizeDouble(marketEntry + i * layerDist, digits);
+         if(bsPrice >= tp3) break; // berhenti sebelum / di TP3
+         cmt = StringFormat("%s BS%d", baseCmt, i);
+         if(StringLen(cmt) > 63) cmt = StringSubstr(cmt, 0, 63);
+         if(!trade.BuyStop(lot, bsPrice, InpSymbol, sl, tp3, ORDER_TIME_GTC, 0, cmt))
             Print("BuyStop  L",i," GAGAL: ", trade.ResultRetcodeDescription());
          else
-            Print("BuyStop  L",i," @ ", bsPrice);
+            Print("BuyStop  L",i," @ ", DoubleToString(bsPrice, digits));
+         i++;
       }
-      else // SELL signal
-      {
-         // Sell Limit — di atas market (entry jika harga naik dulu)
-         double slPrice = NormalizeDouble(marketEntry + offset, digits);
-         if(!trade.SellLimit(lot, slPrice, InpSymbol, sl, tp3, ORDER_TIME_GTC, 0, cmt+"_SL"))
-            Print("SellLimit L",i," GAGAL: ", trade.ResultRetcodeDescription());
-         else
-            Print("SellLimit L",i," @ ", slPrice);
 
-         // Sell Stop — di bawah market (entry jika harga turun terus)
-         double ssPrice = NormalizeDouble(marketEntry - offset, digits);
-         if(!trade.SellStop(lot, ssPrice, InpSymbol, sl, tp3, ORDER_TIME_GTC, 0, cmt+"_SS"))
+      // --- BuyLimit: entry-$1, entry-$2, ... sampai sebelum SL ---
+      i = 1;
+      while(true)
+      {
+         double blPrice = NormalizeDouble(marketEntry - i * layerDist, digits);
+         if(blPrice <= sl) break; // berhenti sebelum / di SL
+         cmt = StringFormat("%s BL%d", baseCmt, i);
+         if(StringLen(cmt) > 63) cmt = StringSubstr(cmt, 0, 63);
+         if(!trade.BuyLimit(lot, blPrice, InpSymbol, sl, tp3, ORDER_TIME_GTC, 0, cmt))
+            Print("BuyLimit L",i," GAGAL: ", trade.ResultRetcodeDescription());
+         else
+            Print("BuyLimit L",i," @ ", DoubleToString(blPrice, digits));
+         i++;
+      }
+   }
+   else // ======= SELL =======
+   {
+      // --- SellStop: entry-$1, entry-$2, ... sampai sebelum TP3 (TP3 < entry) ---
+      i = 1;
+      while(true)
+      {
+         double ssPrice = NormalizeDouble(marketEntry - i * layerDist, digits);
+         if(ssPrice <= tp3) break;
+         cmt = StringFormat("%s SS%d", baseCmt, i);
+         if(StringLen(cmt) > 63) cmt = StringSubstr(cmt, 0, 63);
+         if(!trade.SellStop(lot, ssPrice, InpSymbol, sl, tp3, ORDER_TIME_GTC, 0, cmt))
             Print("SellStop  L",i," GAGAL: ", trade.ResultRetcodeDescription());
          else
-            Print("SellStop  L",i," @ ", ssPrice);
+            Print("SellStop  L",i," @ ", DoubleToString(ssPrice, digits));
+         i++;
+      }
+
+      // --- SellLimit: entry+$1, entry+$2, ... sampai sebelum SL (SL > entry) ---
+      i = 1;
+      while(true)
+      {
+         double slLimitPrice = NormalizeDouble(marketEntry + i * layerDist, digits);
+         if(slLimitPrice >= sl) break;
+         cmt = StringFormat("%s SL%d", baseCmt, i);
+         if(StringLen(cmt) > 63) cmt = StringSubstr(cmt, 0, 63);
+         if(!trade.SellLimit(lot, slLimitPrice, InpSymbol, sl, tp3, ORDER_TIME_GTC, 0, cmt))
+            Print("SellLimit L",i," GAGAL: ", trade.ResultRetcodeDescription());
+         else
+            Print("SellLimit L",i," @ ", DoubleToString(slLimitPrice, digits));
+         i++;
       }
    }
 }
@@ -799,8 +829,8 @@ void CheckSignal(int currentBars)
       gLossCount++; // akan di-decrement jika win (TP3 hit)
       gPanelStatus=(finalDir==1)?"BUY ACTIVE":"SELL ACTIVE";
       gPanelSetup=setupClass;
-      Print(StringFormat(">>> %s | %s | Score=%d | Entry=%.2f | SL=%.2f | TP1=%.2f | TP2=%.2f | TP3=%.2f | LayerDist=%.2f x%d",
-            finalDir==1?"BUY":"SELL",setupClass,score,entryPrice,sl,tp1,tp2,tp3,layerPriceDist,InpLayerCount));
+      Print(StringFormat(">>> %s | %s | Score=%d | Entry=%.2f | SL=%.2f | TP1=%.2f | TP2=%.2f | TP3=%.2f | LayerStep=$%.2f",
+            finalDir==1?"BUY":"SELL",setupClass,score,entryPrice,sl,tp1,tp2,tp3,InpLayerDollars));
    }
    else
       Print("Order GAGAL: ",trade.ResultRetcodeDescription()," (",trade.ResultRetcode(),")");
