@@ -126,6 +126,7 @@ input bool   InpEnableReporting   = true;    // Kirim data ke website untuk anal
 input string InpServerURL         = "";       // URL server (https://yourapp.replit.app)
 input string InpReportSecret      = "ZS909506"; // Harus sama dengan WEBHOOK_SECRET server
 input int    InpSnapshotSecs      = 300;      // Kirim snapshot setiap N detik (default 5 menit)
+input int    InpPollInterval      = 5;        // Interval timer EA dalam detik (default 5)
 
 input group "=== PANEL ==="
 input bool   InpShowPanel         = true;
