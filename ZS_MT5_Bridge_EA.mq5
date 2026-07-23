@@ -52,6 +52,7 @@ int    gDir   = 0; // 1=BUY, -1=SELL
 bool   gHitTP1 = false;
 bool   gHitTP2 = false;
 int    gLastSignalId = 0;
+bool   gPositionOpen = false; // apakah posisi sedang terbuka
 
 //+------------------------------------------------------------------+
 int OnInit()
@@ -70,11 +71,92 @@ int OnInit()
 void OnDeinit(const int reason) { EventKillTimer(); }
 
 //+------------------------------------------------------------------+
-//  MAIN TICK — Trailing Stop Logic
+//  Cek apakah posisi masih ada (untuk deteksi SL kena broker)
+//+------------------------------------------------------------------+
+bool HasMyPosition()
+{
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      if(!posInfo.SelectByIndex(i)) continue;
+      if(posInfo.Magic() == InpMagicNumber && posInfo.Symbol() == InpSymbol) return true;
+   }
+   return false;
+}
+
+//+------------------------------------------------------------------+
+//  Ambil P&L dari histori untuk trade terakhir yang ditutup
+//+------------------------------------------------------------------+
+double GetLastClosedPL()
+{
+   double pl = 0;
+   datetime from = TimeCurrent() - 3600; // cek 1 jam ke belakang
+   if(!HistorySelect(from, TimeCurrent())) return 0;
+   for(int i = HistoryDealsTotal()-1; i >= 0; i--)
+   {
+      ulong tk = HistoryDealGetTicket(i);
+      if(tk == 0) continue;
+      if((long)HistoryDealGetInteger(tk, DEAL_MAGIC) != InpMagicNumber) continue;
+      if(HistoryDealGetString(tk, DEAL_SYMBOL) != InpSymbol) continue;
+      long entry = HistoryDealGetInteger(tk, DEAL_ENTRY);
+      if(entry == DEAL_ENTRY_OUT || entry == DEAL_ENTRY_INOUT)
+      {
+         pl += HistoryDealGetDouble(tk, DEAL_PROFIT)
+             + HistoryDealGetDouble(tk, DEAL_SWAP)
+             + HistoryDealGetDouble(tk, DEAL_COMMISSION);
+      }
+   }
+   return pl;
+}
+
+//+------------------------------------------------------------------+
+//  Kirim hasil trade ke server (win/loss/breakeven + P&L)
+//+------------------------------------------------------------------+
+void SendResult(int sigId, string result, double closePrice, double pnl, string closeReason)
+{
+   string url  = InpServerURL + "/api/mt5/result/" + IntegerToString(sigId);
+   string body = StringFormat(
+      "{\"secret\":\"%s\",\"result\":\"%s\",\"close_price\":%.5f,\"pnl\":%.2f,\"close_reason\":\"%s\"}",
+      InpSecret, result, closePrice, pnl, closeReason
+   );
+   string headers = "Content-Type: application/json\r\n";
+   char postData[], res[];
+   string resHeaders;
+   StringToCharArray(body, postData, 0, StringLen(body), CP_UTF8);
+   int code = WebRequest("POST", url, headers, 5000, postData, res, resHeaders);
+   if(code == -1)
+      Print("SendResult gagal untuk signal ", sigId, " err=", GetLastError());
+   else
+      Print("SendResult sukses: signal=", sigId, " result=", result, " pnl=", pnl);
+}
+
+//+------------------------------------------------------------------+
+//  MAIN TICK — Trailing Stop Logic + Deteksi SL
 //+------------------------------------------------------------------+
 void OnTick()
 {
-   if(!InpEnabled || !InpTrailingEnabled) return;
+   if(!InpEnabled) return;
+
+   // ── Deteksi posisi tertutup oleh broker (SL kena) ──────────────
+   if(gDir != 0 && gPositionOpen && !HasMyPosition())
+   {
+      // Posisi hilang dari luar — SL kena atau close manual
+      gPositionOpen = false;
+      double closePrice = (gDir == 1)
+         ? SymbolInfoDouble(InpSymbol, SYMBOL_BID)
+         : SymbolInfoDouble(InpSymbol, SYMBOL_ASK);
+      double pnl = GetLastClosedPL();
+      string result = (pnl > 0) ? "win" : (pnl < 0) ? "loss" : "breakeven";
+      string reason = (pnl > 0) ? "TP" : "SL";
+
+      Print("Posisi tertutup eksternal | P&L=", pnl, " Reason=", reason);
+      if(gLastSignalId > 0)
+         SendResult(gLastSignalId, result, closePrice, pnl, reason);
+
+      ResetSignalData();
+      return;
+   }
+
+   if(!InpTrailingEnabled) return;
    if(gDir == 0) return; // tidak ada posisi aktif yang dimonitor
 
    // Cari posisi yang sesuai magic number
@@ -94,7 +176,11 @@ void OnTick()
          if(gTP3 > 0 && curPrice >= gTP3)
          {
             Print("TP3 TERCAPAI! Closing BUY @ ", curPrice);
+            double pnlTP3 = posInfo.Profit() + posInfo.Swap();
             trade.PositionClose(ticket);
+            gPositionOpen = false;
+            if(gLastSignalId > 0)
+               SendResult(gLastSignalId, "win", curPrice, pnlTP3, "TP3");
             ResetSignalData();
             return;
          }
@@ -128,7 +214,11 @@ void OnTick()
          if(gTP3 > 0 && curPrice <= gTP3)
          {
             Print("TP3 TERCAPAI! Closing SELL @ ", curPrice);
+            double pnlTP3sell = posInfo.Profit() + posInfo.Swap();
             trade.PositionClose(ticket);
+            gPositionOpen = false;
+            if(gLastSignalId > 0)
+               SendResult(gLastSignalId, "win", curPrice, pnlTP3sell, "TP3");
             ResetSignalData();
             return;
          }
@@ -225,14 +315,15 @@ void PollServer()
    // Simpan data sinyal untuk trailing stop
    if(ticket > 0)
    {
-      gEntry  = (action == "BUY_LIMIT") ? SymbolInfoDouble(InpSymbol, SYMBOL_ASK) : SymbolInfoDouble(InpSymbol, SYMBOL_BID);
-      gSL     = sl;
-      gTP1    = tp1;
-      gTP2    = tp2;
-      gTP3    = tp3;
-      gDir    = (action == "BUY_LIMIT") ? 1 : -1;
-      gHitTP1 = false;
-      gHitTP2 = false;
+      gEntry       = (action == "BUY_LIMIT") ? SymbolInfoDouble(InpSymbol, SYMBOL_ASK) : SymbolInfoDouble(InpSymbol, SYMBOL_BID);
+      gSL          = sl;
+      gTP1         = tp1;
+      gTP2         = tp2;
+      gTP3         = tp3;
+      gDir         = (action == "BUY_LIMIT") ? 1 : -1;
+      gHitTP1      = false;
+      gHitTP2      = false;
+      gPositionOpen = true;
    }
 
    AckSignal(sigId, ticket);
@@ -300,6 +391,7 @@ void ResetSignalData()
 {
    gEntry = 0; gSL = 0; gTP1 = 0; gTP2 = 0; gTP3 = 0;
    gDir = 0; gHitTP1 = false; gHitTP2 = false;
+   gPositionOpen = false;
    Print("Posisi selesai. EA menunggu sinyal berikutnya.");
 }
 

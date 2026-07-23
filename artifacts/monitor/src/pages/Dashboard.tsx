@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { useGetMonitorSummary, useListMonitorSignals, Signal } from '@workspace/api-client-react';
+import { useGetMonitorSummary, useListMonitorSignals, useGetEaAnalytics, Signal } from '@workspace/api-client-react';
 import { format, parseISO } from 'date-fns';
 import { 
   Activity, Clock, Hash, TrendingDown, TrendingUp, 
   CheckCircle2, XCircle, AlertCircle, Send, PlayCircle, Clock4,
-  RefreshCw, Trophy, DollarSign, MinusCircle
+  RefreshCw, Trophy, DollarSign, MinusCircle, Zap
 } from 'lucide-react';
 
 // --- UTILS ---
@@ -159,10 +159,22 @@ export default function Dashboard() {
     { query: { refetchInterval: 5000 } }
   );
 
+  const { data: eaData } = useGetEaAnalytics({
+    query: { refetchInterval: 10000 }
+  });
+
   const stats   = summary?.stats   || { total: 0, executed: 0, pending: 0, sent: 0, cancelled: 0, expired: 0 };
   const results = (summary as any)?.results || { win: 0, loss: 0, breakeven: 0, total: 0, winRate: null, totalPnl: 0 };
   const active    = summary?.active;
   const lastTrade = summary?.lastTrade;
+
+  const analytics = (eaData as any)?.analytics;
+  const latestSnapshot = analytics?.latestSnapshot;
+  const latestOpen = analytics?.latestOpen;
+  const livePnl: number | null = latestSnapshot?.plDollars != null
+    ? parseFloat(latestSnapshot.plDollars)
+    : null;
+  const hasLivePosition = latestOpen != null && (active?.status === 'pending' || active?.status === 'sent' || latestSnapshot?.eventType === 'SNAPSHOT');
   const allSignals: Signal[] = listRes?.signals || [];
 
   const isFetching  = summaryFetching || listFetching;
@@ -218,6 +230,26 @@ export default function Dashboard() {
         <StatCard title="Cancelled"    value={stats.cancelled} />
         <StatCard title="Expired"      value={stats.expired}               labelClass="text-orange-500" />
       </div>
+
+      {/* LIVE PNL BANNER — dari EA Standalone (SNAPSHOT) */}
+      {livePnl !== null && (
+        <div className={`flex items-center gap-4 px-5 py-3 rounded border font-mono text-sm ${
+          livePnl >= 0
+            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+            : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+        }`}>
+          <Zap className="w-4 h-4 shrink-0" />
+          <span className="font-semibold uppercase tracking-wider text-xs">Live Float P&amp;L (EA V10)</span>
+          <span className={`text-xl font-bold tracking-tight ${livePnl >= 0 ? 'text-emerald-400' : 'text-rose-500'}`}>
+            {livePnl >= 0 ? '+' : ''}{livePnl.toFixed(2)} USD
+          </span>
+          {latestSnapshot && (
+            <span className="ml-auto text-xs opacity-60">
+              update: {format(parseISO(latestSnapshot.createdAt), 'HH:mm:ss')}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* WIN/LOSS ROW */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

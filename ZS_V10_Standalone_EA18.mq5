@@ -357,7 +357,7 @@ void OnTimer()
    if(gSnapshotCounter >= snapEvery)
    {
       gSnapshotCounter = 0;
-      SendReport("SNAPSHOT", "", 0, 0);
+      SendReport("SNAPSHOT", "", 0, CalcCurrentPL());
    }
 }
 
@@ -1396,7 +1396,7 @@ void DrawPanel()
    // ══════════════════════════════════════════
    // [4] SIGNAL STRENGTH
    // ══════════════════════════════════════════
-   PanelRect("SEP_SS",x,row,W,1,C'28,32,60'),row+=3;
+   PanelRect("SEP_SS",x,row,W,1,C'28,32,60'); row+=3;
    PanelLabel("SEC_SS"," ◆ SIGNAL STRENGTH",lx+20,row,C'80,160,255',fsS); row+=lh-1;
 
    color buySCL  = gBuyScore>=gMinQuality?C'0,235,85':C'70,75,100';
@@ -1420,7 +1420,7 @@ void DrawPanel()
    // ══════════════════════════════════════════
    // [5] MULTI-TF TREND
    // ══════════════════════════════════════════
-   PanelRect("SEP_TF",x,row,W,1,C'28,32,60'),row+=3;
+   PanelRect("SEP_TF",x,row,W,1,C'28,32,60'); row+=3;
    PanelLabel("SEC_TF"," ◆ MULTI-TF TREND",lx+20,row,C'80,160,255',fsS); row+=lh-1;
 
    color m1c =gM1Bull?C'0,215,85':gM1Bear?C'235,55,55':C'110,115,140';
@@ -1440,7 +1440,7 @@ void DrawPanel()
    // ══════════════════════════════════════════
    // [6] INDICATORS
    // ══════════════════════════════════════════
-   PanelRect("SEP_IN",x,row,W,1,C'28,32,60'),row+=3;
+   PanelRect("SEP_IN",x,row,W,1,C'28,32,60'); row+=3;
    PanelLabel("SEC_IN"," ◆ INDICATORS",lx+20,row,C'80,160,255',fsS); row+=lh-1;
 
    color rsiCol=(gRsiVal>=InpOverboughtRSI)?C'235,55,55':(gRsiVal<=InpOversoldRSI)?C'0,205,85':(gRsiVal>=50)?C'200,155,0':C'0,175,120';
@@ -1465,7 +1465,7 @@ void DrawPanel()
    // ══════════════════════════════════════════
    // [7] SR LEVELS
    // ══════════════════════════════════════════
-   PanelRect("SEP_SR",x,row,W,1,C'28,32,60'),row+=3;
+   PanelRect("SEP_SR",x,row,W,1,C'28,32,60'); row+=3;
    PanelLabel("SEC_SR"," ◆ SUPPORT / RESISTANCE",lx+20,row,C'80,160,255',fsS); row+=lh-1;
 
    string supTxt=gSupLevel>0?StringFormat("%.2f",gSupLevel):"-";
@@ -1484,7 +1484,7 @@ void DrawPanel()
    // ══════════════════════════════════════════
    // [8] ACTIVE TRADE
    // ══════════════════════════════════════════
-   PanelRect("SEP_TR",x,row,W,1,C'28,32,60'),row+=3;
+   PanelRect("SEP_TR",x,row,W,1,C'28,32,60'); row+=3;
 
    if(hasTrade)
    {
@@ -1538,7 +1538,7 @@ void DrawPanel()
    // ══════════════════════════════════════════
    // [9] SESSION + PERFORMANCE STATS
    // ══════════════════════════════════════════
-   PanelRect("SEP_ST2",x,row,W,1,C'28,32,60'),row+=3;
+   PanelRect("SEP_ST2",x,row,W,1,C'28,32,60'); row+=3;
    PanelLabel("SEC_SES"," ◆ SESSION & PERFORMANCE",lx+20,row,C'80,160,255',fsS); row+=lh-1;
 
    // Session
