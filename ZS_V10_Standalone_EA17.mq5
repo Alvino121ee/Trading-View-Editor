@@ -3,10 +3,10 @@
 //|  ZS XAUUSD V10 SR Precision Pro — Standalone MT5 EA            |
 //|  Replicates Pine Script indicator ZS XAUUSD V10 logic 1:1      |
 //|  No TradingView, no server, no webhook required                 |
-//|  v2.0 — Auto Reversal + Pro Dashboard Panel                    |
+//|  v3.0 — Stochastic Filter + Ultra Modern Panel                 |
 //+------------------------------------------------------------------+
 #property copyright "ZS Trading"
-#property version   "2.00"
+#property version   "3.00"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -128,6 +128,15 @@ input string InpReportSecret      = "ZS909506"; // Harus sama dengan WEBHOOK_SEC
 input int    InpSnapshotSecs      = 300;      // Kirim snapshot setiap N detik (default 5 menit)
 input int    InpPollInterval      = 5;        // Interval timer EA dalam detik (default 5)
 
+input group "=== STOCHASTIC FILTER ==="
+input bool   InpUseStochFilter    = true;    // Aktifkan filter Stochastic sebelum entry
+input int    InpStochKPeriod      = 5;       // Stochastic %K period
+input int    InpStochDPeriod      = 3;       // Stochastic %D period
+input int    InpStochSlowing      = 3;       // Stochastic slowing
+input int    InpStochSellLevel    = 80;      // SELL: entry saat Stoch >= level ini
+input int    InpStochBuyLevel     = 25;      // BUY: entry saat Stoch <= level ini
+input int    InpStochMaxWaitBars  = 15;      // Batas tunggu maksimum (bar M1), 0=unlimited
+
 input group "=== PANEL ==="
 input bool   InpShowPanel         = true;
 input int    InpPanelX            = 20;
@@ -139,6 +148,7 @@ int hEmaFast, hEmaMid, hEmaSlow;
 int hEmaM5Fast, hEmaM5Slow;
 int hEmaM15Fast, hEmaM15Slow;
 int hRsi, hAdx, hAtr, hBB;
+int hStoch;
 
 //==================== TRADE OBJECTS ====================//
 CTrade        trade;
@@ -174,6 +184,8 @@ bool   gM1Bear=false, gM5Bear=false, gM15Bear=false;
 double gRsiVal         = 0;
 double gAdxVal         = 0;
 double gAtrVal         = 0;
+double gStochK         = 0;    // Stochastic %K value for panel
+double gStochD         = 0;    // Stochastic %D value for panel
 bool   gSidewaysFlag   = false;
 string gSRStatus       = "-";
 bool   gSRBlockBuy     = false;
@@ -190,6 +202,16 @@ int    gTotalSignals   = 0;
 string gLastReversalInfo = "";   // "SELL→BUY @ 3185.20"
 bool   gReversalAlert  = false;  // flash saat reversal baru terjadi
 int    gReversalFlash  = 0;      // countdown flash
+
+//==================== PENDING SIGNAL (STOCH FILTER) ====================//
+int    gPendingDir      = 0;     // 1=BUY, -1=SELL, 0=none
+double gPendingSLDist   = 0;     // jarak SL dalam harga
+double gPendingTP1Dist  = 0;
+double gPendingTP2Dist  = 0;
+double gPendingTP3Dist  = 0;
+string gPendingSetup    = "";
+int    gPendingScore    = 0;
+int    gPendingBar      = 0;     // bar index saat sinyal muncul
 
 // Reporting
 int    gSnapshotCounter = 0;     // counts OnTimer() calls for snapshot pacing
@@ -283,10 +305,12 @@ int OnInit()
    hAdx       = iADX(InpSymbol, PERIOD_M1, InpAdxLen);
    hAtr       = iATR(InpSymbol, PERIOD_M1, InpATRLen);
    hBB        = iBands(InpSymbol, PERIOD_M1, InpBBLen, 0, InpBBDev, PRICE_CLOSE);
+   hStoch     = iStochastic(InpSymbol, PERIOD_M1, InpStochKPeriod, InpStochDPeriod, InpStochSlowing, MODE_SMA, STO_LOWHIGH);
 
    if(hEmaFast==INVALID_HANDLE || hEmaMid==INVALID_HANDLE || hEmaSlow==INVALID_HANDLE ||
       hEmaM5Fast==INVALID_HANDLE || hEmaM15Fast==INVALID_HANDLE ||
-      hRsi==INVALID_HANDLE || hAdx==INVALID_HANDLE || hAtr==INVALID_HANDLE || hBB==INVALID_HANDLE)
+      hRsi==INVALID_HANDLE || hAdx==INVALID_HANDLE || hAtr==INVALID_HANDLE ||
+      hBB==INVALID_HANDLE || hStoch==INVALID_HANDLE)
    {
       Print("ERROR: Gagal membuat indicator handles. Symbol benar? ", InpSymbol);
       return INIT_FAILED;
@@ -318,6 +342,7 @@ void OnDeinit(const int reason)
    IndicatorRelease(hEmaM15Fast);IndicatorRelease(hEmaM15Slow);
    IndicatorRelease(hRsi); IndicatorRelease(hAdx);
    IndicatorRelease(hAtr); IndicatorRelease(hBB);
+   IndicatorRelease(hStoch);
 }
 
 //+------------------------------------------------------------------+
@@ -533,6 +558,103 @@ void ResetTrade()
    Print("Trade selesai. Menunggu sinyal berikutnya.");
 }
 
+void ResetPending()
+{
+   gPendingDir=0; gPendingSLDist=0;
+   gPendingTP1Dist=0; gPendingTP2Dist=0; gPendingTP3Dist=0;
+   gPendingSetup=""; gPendingScore=0; gPendingBar=0;
+}
+
+//+------------------------------------------------------------------+
+// Cek Stochastic lalu eksekusi pending signal (dipanggil setiap tick)
+//+------------------------------------------------------------------+
+void CheckStochEntry()
+{
+   if(gPendingDir == 0) return;
+   if(HasActivePosition())  { ResetPending(); return; }
+
+   // Batas tunggu
+   if(InpStochMaxWaitBars > 0)
+   {
+      int curBars = iBars(InpSymbol, PERIOD_M1) - 1;
+      if(curBars - gPendingBar >= InpStochMaxWaitBars)
+      {
+         Print(">>> STOCH TIMEOUT: sinyal expired setelah ", InpStochMaxWaitBars, " bar. Dir=", gPendingDir>0?"BUY":"SELL");
+         ResetPending();
+         gPanelStatus = "STOCH TIMEOUT";
+         return;
+      }
+   }
+
+   // Baca Stoch saat ini
+   gStochK = Buf(hStoch, 0, 0);  // %K (main line, shift=0 = current bar)
+   gStochD = Buf(hStoch, 1, 0);  // %D (signal line)
+   if(gStochK <= 0) return;
+
+   bool stochOK = false;
+   if(gPendingDir ==  1) stochOK = (gStochK <= InpStochBuyLevel);   // BUY: Stoch <= 25
+   if(gPendingDir == -1) stochOK = (gStochK >= InpStochSellLevel);  // SELL: Stoch >= 80
+
+   if(!stochOK)
+   {
+      gPanelStatus = StringFormat("WAIT STOCH %s (%.1f)", gPendingDir>0?"BUY":"SELL", gStochK);
+      return;
+   }
+
+   // Stoch terpenuhi → entry sekarang dengan harga saat ini
+   int    digits = (int)SymbolInfoInteger(InpSymbol, SYMBOL_DIGITS);
+   double lot    = MathMin(InpLot, InpMaxLot);
+   double layerPriceDist = gPendingSLDist > 0 ? gPendingSLDist * (InpLayerDollars / InpSLDollars) : 0;
+   double entryPrice, sl, tp1, tp2, tp3;
+   bool   ok = false;
+
+   if(gPendingDir == 1)
+   {
+      entryPrice = SymbolInfoDouble(InpSymbol, SYMBOL_ASK);
+      sl  = NormalizeDouble(entryPrice - gPendingSLDist,   digits);
+      tp1 = NormalizeDouble(entryPrice + gPendingTP1Dist,  digits);
+      tp2 = NormalizeDouble(entryPrice + gPendingTP2Dist,  digits);
+      tp3 = NormalizeDouble(entryPrice + gPendingTP3Dist,  digits);
+      if(InpDeleteOnNew) CloseMyPositions();
+      string cmt = StringFormat("ZS V10 %s s%d STOCH", gPendingSetup, gPendingScore);
+      if(StringLen(cmt)>63) cmt=StringSubstr(cmt,0,63);
+      ok = trade.Buy(lot, InpSymbol, entryPrice, sl, tp3, cmt);
+      if(ok) PlaceLayers(1, entryPrice, sl, tp3, lot, cmt, layerPriceDist, digits);
+   }
+   else
+   {
+      entryPrice = SymbolInfoDouble(InpSymbol, SYMBOL_BID);
+      sl  = NormalizeDouble(entryPrice + gPendingSLDist,   digits);
+      tp1 = NormalizeDouble(entryPrice - gPendingTP1Dist,  digits);
+      tp2 = NormalizeDouble(entryPrice - gPendingTP2Dist,  digits);
+      tp3 = NormalizeDouble(entryPrice - gPendingTP3Dist,  digits);
+      if(InpDeleteOnNew) CloseMyPositions();
+      string cmt = StringFormat("ZS V10 %s s%d STOCH", gPendingSetup, gPendingScore);
+      if(StringLen(cmt)>63) cmt=StringSubstr(cmt,0,63);
+      ok = trade.Sell(lot, InpSymbol, entryPrice, sl, tp3, cmt);
+      if(ok) PlaceLayers(-1, entryPrice, sl, tp3, lot, cmt, layerPriceDist, digits);
+   }
+
+   if(ok)
+   {
+      gEntry=entryPrice; gSL=sl; gTP1=tp1; gTP2=tp2; gTP3=tp3;
+      gDir=gPendingDir; gHitTP1=false; gHitTP2=false;
+      gOpenTime=TimeCurrent();
+      gTotalSignals++;
+      gLossCount++;
+      gPanelStatus = (gPendingDir==1) ? "BUY ACTIVE" : "SELL ACTIVE";
+      gPanelSetup  = gPendingSetup;
+      Print(StringFormat(">>> STOCH ENTRY %s | %s | Score=%d | StochK=%.1f | Entry=%.2f | SL=%.2f | TP1=%.2f | TP2=%.2f | TP3=%.2f",
+            gPendingDir==1?"BUY":"SELL", gPendingSetup, gPendingScore, gStochK,
+            entryPrice, sl, tp1, tp2, tp3));
+      SendReport("OPEN", "", entryPrice, 0);
+   }
+   else
+      Print("Order GAGAL (stoch entry): ", trade.ResultRetcodeDescription());
+
+   ResetPending();
+}
+
 //+------------------------------------------------------------------+
 // TRAILING STOP
 //+------------------------------------------------------------------+
@@ -605,6 +727,18 @@ void OnTick()
 
    // Trailing stop berjalan di setiap tick (price-based)
    ManageTrailingStop();
+
+   // Cek stochastic & eksekusi pending signal setiap tick
+   if(InpUseStochFilter && gPendingDir != 0)
+   {
+      CheckStochEntry();
+      if(InpShowPanel) DrawPanel();
+      return;
+   }
+
+   // Update stoch display saat tidak ada pending
+   gStochK = Buf(hStoch, 0, 0);
+   gStochD = Buf(hStoch, 1, 0);
 
    // Countdown flash reversal alert
    if(gReversalFlash > 0) gReversalFlash--;
@@ -932,13 +1066,36 @@ void CheckSignal(int currentBars)
    }
 
    // ================================================================
-   // EXECUTE ORDER
+   // EXECUTE ORDER  (atau simpan pending jika stoch filter aktif)
    // ================================================================
-   int digits = (int)SymbolInfoInteger(InpSymbol, SYMBOL_DIGITS);
-   double entryPrice, sl, tp1, tp2, tp3;
-   bool ok=false;
    int score=(finalDir==1)?gBuyScore:gSellScore;
 
+   if(InpUseStochFilter)
+   {
+      // Simpan sinyal sebagai pending — entry menunggu Stochastic
+      gPendingDir     = finalDir;
+      gPendingSLDist  = slPriceDist;
+      gPendingTP1Dist = tp1PriceDist;
+      gPendingTP2Dist = tp2PriceDist;
+      gPendingTP3Dist = tp3PriceDist;
+      gPendingSetup   = setupClass;
+      gPendingScore   = score;
+      gPendingBar     = iBars(InpSymbol, PERIOD_M1) - 1;
+      gPanelSetup     = setupClass;
+
+      string waitDir  = (finalDir == 1) ? "BUY" : "SELL";
+      string waitCond = (finalDir == 1)
+                        ? StringFormat("Stoch <= %d", InpStochBuyLevel)
+                        : StringFormat("Stoch >= %d", InpStochSellLevel);
+      Print(StringFormat(">>> SIGNAL %s | %s | Score=%d | Menunggu %s | SLdist=%.2f | TP1=%.2f TP2=%.2f TP3=%.2f",
+            waitDir, setupClass, score, waitCond, slPriceDist, tp1PriceDist, tp2PriceDist, tp3PriceDist));
+      return; // ExecPending akan handle entry di CheckStochEntry()
+   }
+
+   // Stoch filter OFF → langsung entry seperti biasa
+   int    digits = (int)SymbolInfoInteger(InpSymbol, SYMBOL_DIGITS);
+   double entryPrice, sl, tp1, tp2, tp3;
+   bool   ok=false;
    double layerPriceDist = (dollarPerUnit > 0) ? InpLayerDollars / dollarPerUnit : 0;
 
    if(finalDir==1)
