@@ -51,7 +51,7 @@ A trading signal bridge that receives signals from TradingView webhooks, stores 
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Gunakan Bahasa Indonesia dalam semua komunikasi dengan pengguna.
 
 ## Gotchas
 
