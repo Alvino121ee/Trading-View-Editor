@@ -121,6 +121,12 @@ input group "=== AUTO REVERSAL ==="
 input bool   InpAutoReversal      = true;   // Auto close & flip saat signal berubah arah
 input int    InpReversalMinScore  = 75;     // Min score sebelum reversal dieksekusi
 
+input group "=== REPORTING ==="
+input bool   InpEnableReporting   = true;    // Kirim data ke website untuk analisis
+input string InpServerURL         = "";       // URL server (https://yourapp.replit.app)
+input string InpReportSecret      = "ZS909506"; // Harus sama dengan WEBHOOK_SECRET server
+input int    InpSnapshotSecs      = 300;      // Kirim snapshot setiap N detik (default 5 menit)
+
 input group "=== PANEL ==="
 input bool   InpShowPanel         = true;
 input int    InpPanelX            = 20;
@@ -184,8 +190,81 @@ string gLastReversalInfo = "";   // "SELL→BUY @ 3185.20"
 bool   gReversalAlert  = false;  // flash saat reversal baru terjadi
 int    gReversalFlash  = 0;      // countdown flash
 
+// Reporting
+int    gSnapshotCounter = 0;     // counts OnTimer() calls for snapshot pacing
+
 //==================== PANEL OBJECT PREFIX ====================//
 #define PANEL_PREFIX "ZSEA_"
+
+//+------------------------------------------------------------------+
+// REPORTING: Hitung total P&L posisi aktif saat ini
+//+------------------------------------------------------------------+
+double CalcCurrentPL()
+{
+   double pl = 0;
+   for(int i = PositionsTotal()-1; i >= 0; i--)
+   {
+      if(!posInfo.SelectByIndex(i)) continue;
+      if(posInfo.Magic()==InpMagicNumber && posInfo.Symbol()==InpSymbol)
+         pl += posInfo.Profit() + posInfo.Swap();
+   }
+   return pl;
+}
+
+//+------------------------------------------------------------------+
+// REPORTING: Kirim event ke server untuk analisis & penyimpanan
+// Pastikan URL server sudah ditambahkan ke Tools→Options→Expert Advisors→Allowed URLs
+//+------------------------------------------------------------------+
+void SendReport(string eventType, string closeReason, double closePrice, double plDollars)
+{
+   if(!InpEnableReporting || StringLen(InpServerURL) == 0) return;
+
+   int    holdMin  = (gOpenTime > 0) ? (int)((TimeCurrent()-gOpenTime)/60) : 0;
+   string dirStr   = (gDir==1) ? "BUY" : (gDir==-1) ? "SELL" : "";
+   string tpLvl    = (closeReason=="TP1") ? "TP1" : (closeReason=="TP2") ? "TP2" : (closeReason=="TP3") ? "TP3" : "";
+   string sesStr   = gSessionOK ? "true" : "false";
+
+   string json = StringFormat(
+      "{\"secret\":\"%s\",\"event_type\":\"%s\",\"symbol\":\"%s\","
+      "\"direction\":\"%s\",\"setup\":\"%s\",\"score\":%d,"
+      "\"entry\":%.5f,\"sl\":%.5f,\"tp1\":%.5f,\"tp2\":%.5f,\"tp3\":%.5f,"
+      "\"close_price\":%.5f,\"pl_dollars\":%.2f,\"close_reason\":\"%s\","
+      "\"tp_level\":\"%s\","
+      "\"rsi\":%.2f,\"adx\":%.2f,\"atr\":%.5f,"
+      "\"buy_score\":%d,\"sell_score\":%d,"
+      "\"bull_count\":%d,\"bear_count\":%d,"
+      "\"sr_status\":\"%s\","
+      "\"session_ok\":%s,"
+      "\"hold_minutes\":%d,"
+      "\"total_signals\":%d,\"win_count\":%d,\"loss_count\":%d}",
+      InpReportSecret, eventType, InpSymbol,
+      dirStr, gPanelSetup, (gDir==1) ? gBuyScore : gSellScore,
+      gEntry, gSL, gTP1, gTP2, gTP3,
+      closePrice, plDollars, closeReason,
+      tpLvl,
+      gRsiVal, gAdxVal, gAtrVal,
+      gBuyScore, gSellScore,
+      gBullCount, gBearCount,
+      gSRStatus,
+      sesStr,
+      holdMin,
+      gTotalSignals, gWinCount, gLossCount
+   );
+
+   string url = InpServerURL + "/api/ea/report";
+   char   postData[];
+   char   result[];
+   string reqHeaders = "Content-Type: application/json\r\n";
+   string resHeaders;
+   StringToCharArray(json, postData, 0, StringLen(json), CP_UTF8);
+
+   int code = WebRequest("POST", url, reqHeaders, 5000, postData, result, resHeaders);
+   if(code < 0)
+      Print("SendReport GAGAL: event=", eventType, " err=", GetLastError(),
+            " (tambahkan URL ke Tools→Options→Expert Advisors→Allowed URLs)");
+   else if(code != 200 && code != 201)
+      Print("SendReport HTTP ", code, ": event=", eventType);
+}
 
 //+------------------------------------------------------------------+
 int OnInit()
@@ -219,19 +298,40 @@ int OnInit()
    PanelDelete();
    PanelCreate();
 
-   Print("ZS V10 Standalone EA v2.0 aktif | Symbol: ", InpSymbol, " | AutoReversal: ", InpAutoReversal?"ON":"OFF");
+   // Aktifkan timer untuk snapshot periodik (hanya jika reporting aktif)
+   if(InpEnableReporting && StringLen(InpServerURL) > 0)
+      EventSetTimer(InpPollInterval > 0 ? InpPollInterval : 5);
+
+   Print("ZS V10 Standalone EA v2.0 aktif | Symbol: ", InpSymbol, " | AutoReversal: ", InpAutoReversal?"ON":"OFF",
+         " | Reporting: ", (InpEnableReporting && StringLen(InpServerURL)>0) ? InpServerURL : "OFF");
    return INIT_SUCCEEDED;
 }
 
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
 {
+   EventKillTimer();
    PanelDelete();
    IndicatorRelease(hEmaFast);  IndicatorRelease(hEmaMid);   IndicatorRelease(hEmaSlow);
    IndicatorRelease(hEmaM5Fast);IndicatorRelease(hEmaM5Slow);
    IndicatorRelease(hEmaM15Fast);IndicatorRelease(hEmaM15Slow);
    IndicatorRelease(hRsi); IndicatorRelease(hAdx);
    IndicatorRelease(hAtr); IndicatorRelease(hBB);
+}
+
+//+------------------------------------------------------------------+
+// TIMER: kirim snapshot periodik ke server
+//+------------------------------------------------------------------+
+void OnTimer()
+{
+   if(!InpEnableReporting || StringLen(InpServerURL) == 0) return;
+   gSnapshotCounter++;
+   int snapEvery = MathMax(1, InpSnapshotSecs / (InpPollInterval > 0 ? InpPollInterval : 5));
+   if(gSnapshotCounter >= snapEvery)
+   {
+      gSnapshotCounter = 0;
+      SendReport("SNAPSHOT", "", 0, 0);
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -449,12 +549,14 @@ void ManageTrailingStop()
       {
          Print("TP3 TERCAPAI! Close ALL BUY + cancel pending");
          gLossCount--; gWinCount++;
+         double plTP3Buy = CalcCurrentPL();
          CloseMyPositions();
+         SendReport("CLOSE", "TP3", gTP3, plTP3Buy);
          ResetTrade();
          return;
       }
-      if(!gHitTP2 && gTP2>0 && now>=gTP2) { gHitTP2=true; Print("TP2 hit → SL semua posisi ke TP1"); }
-      if(!gHitTP1 && gTP1>0 && now>=gTP1) { gHitTP1=true; Print("TP1 hit → SL semua posisi ke BE"); }
+      if(!gHitTP2 && gTP2>0 && now>=gTP2) { gHitTP2=true; Print("TP2 hit → SL semua posisi ke TP1"); SendReport("TP_HIT","TP2",now,CalcCurrentPL()); }
+      if(!gHitTP1 && gTP1>0 && now>=gTP1) { gHitTP1=true; Print("TP1 hit → SL semua posisi ke BE");  SendReport("TP_HIT","TP1",now,CalcCurrentPL()); }
    }
    else
    {
@@ -462,12 +564,14 @@ void ManageTrailingStop()
       {
          Print("TP3 TERCAPAI! Close ALL SELL + cancel pending");
          gLossCount--; gWinCount++;
+         double plTP3Sell = CalcCurrentPL();
          CloseMyPositions();
+         SendReport("CLOSE", "TP3", gTP3, plTP3Sell);
          ResetTrade();
          return;
       }
-      if(!gHitTP2 && gTP2>0 && now<=gTP2) { gHitTP2=true; Print("TP2 hit → SL semua posisi ke TP1"); }
-      if(!gHitTP1 && gTP1>0 && now<=gTP1) { gHitTP1=true; Print("TP1 hit → SL semua posisi ke BE"); }
+      if(!gHitTP2 && gTP2>0 && now<=gTP2) { gHitTP2=true; Print("TP2 hit → SL semua posisi ke TP1"); SendReport("TP_HIT","TP2",now,CalcCurrentPL()); }
+      if(!gHitTP1 && gTP1>0 && now<=gTP1) { gHitTP1=true; Print("TP1 hit → SL semua posisi ke BE");  SendReport("TP_HIT","TP1",now,CalcCurrentPL()); }
    }
 
    for(int i = PositionsTotal()-1; i >= 0; i--)
@@ -521,7 +625,10 @@ void OnTick()
       if(holdMin >= InpMaxHoldMinutes)
       {
          Print("Max hold time tercapai (", InpMaxHoldMinutes, " min). Menutup posisi.");
+         double plTimeout = CalcCurrentPL();
+         double closeTimeout = (gDir==1)?SymbolInfoDouble(InpSymbol,SYMBOL_BID):SymbolInfoDouble(InpSymbol,SYMBOL_ASK);
          CloseMyPositions(); ResetTrade();
+         SendReport("CLOSE", "TIMEOUT", closeTimeout, plTimeout);
          if(InpShowPanel) DrawPanel();
          return;
       }
@@ -770,11 +877,13 @@ void CheckSignal(int currentBars)
                                           : SymbolInfoDouble(InpSymbol, SYMBOL_BID);
          Print(">>> ⚡ AUTO REVERSAL: ", revFrom, " → ", revTo,
                " | Score=", revScore, " | @ ", DoubleToString(revPrice, (int)SymbolInfoInteger(InpSymbol, SYMBOL_DIGITS)));
+         double plRev = CalcCurrentPL();
          CloseMyPositions();
          gDir = 0;
          gLastReversalInfo = revFrom + "→" + revTo + " @" + DoubleToString(revPrice, 2);
          gReversalAlert    = true;
          gReversalFlash    = 10; // flash 10 bar
+         SendReport("REVERSAL", revFrom+"→"+revTo, revPrice, plRev);
          // fall through → buka posisi baru arah finalDir
       }
       else
@@ -869,6 +978,7 @@ void CheckSignal(int currentBars)
       gPanelSetup=setupClass;
       Print(StringFormat(">>> %s | %s | Score=%d | Entry=%.2f | SL=%.2f | TP1=%.2f | TP2=%.2f | TP3=%.2f | Layer=$%.2f",
             finalDir==1?"BUY":"SELL",setupClass,score,entryPrice,sl,tp1,tp2,tp3,InpLayerDollars));
+      SendReport("OPEN", "", entryPrice, 0);
    }
    else
       Print("Order GAGAL: ",trade.ResultRetcodeDescription()," (",trade.ResultRetcode(),")");

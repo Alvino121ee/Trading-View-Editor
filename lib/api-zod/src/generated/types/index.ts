@@ -6,7 +6,16 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './eaAnalytics';
+export * from './eaAnalyticsResponse';
+export * from './eaDirectionStat';
+export * from './eaPlPoint';
+export * from './eaReport';
+export * from './eaReportListResponse';
+export * from './eaScoreRange';
+export * from './eaSetupStat';
 export * from './healthStatus';
+export * from './listEaReportsParams';
 export * from './listMonitorSignalsParams';
 export * from './monitorStats';
 export * from './monitorSummaryResponse';

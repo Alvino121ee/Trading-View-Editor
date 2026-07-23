@@ -100,3 +100,183 @@ export const GetMonitorSummaryResponse = zod.object({
 })
 
 
+/**
+ * @summary Get recent EA event reports
+ */
+export const listEaReportsQueryLimitDefault = 100;
+
+export const ListEaReportsQueryParams = zod.object({
+  "limit": zod.coerce.number().default(listEaReportsQueryLimitDefault)
+})
+
+export const ListEaReportsResponse = zod.object({
+  "ok": zod.boolean(),
+  "reports": zod.array(zod.object({
+  "id": zod.number(),
+  "eventType": zod.string(),
+  "symbol": zod.string(),
+  "direction": zod.string().nullish(),
+  "setup": zod.string().nullish(),
+  "score": zod.number().nullish(),
+  "entry": zod.string().nullish(),
+  "sl": zod.string().nullish(),
+  "tp1": zod.string().nullish(),
+  "tp2": zod.string().nullish(),
+  "tp3": zod.string().nullish(),
+  "closePrice": zod.string().nullish(),
+  "plDollars": zod.string().nullish(),
+  "closeReason": zod.string().nullish(),
+  "holdMinutes": zod.number().nullish(),
+  "tpLevel": zod.string().nullish(),
+  "rsi": zod.string().nullish(),
+  "adx": zod.string().nullish(),
+  "atr": zod.string().nullish(),
+  "buyScore": zod.number().nullish(),
+  "sellScore": zod.number().nullish(),
+  "bullCount": zod.number().nullish(),
+  "bearCount": zod.number().nullish(),
+  "srStatus": zod.string().nullish(),
+  "mt5Ticket": zod.number().nullish(),
+  "sessionOk": zod.boolean().nullish(),
+  "totalSignals": zod.number().nullish(),
+  "winCount": zod.number().nullish(),
+  "lossCount": zod.number().nullish(),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Get aggregated EA performance analytics
+ */
+export const GetEaAnalyticsResponse = zod.object({
+  "ok": zod.boolean(),
+  "analytics": zod.object({
+  "totalTrades": zod.number(),
+  "winCount": zod.number(),
+  "lossCount": zod.number(),
+  "winRate": zod.number(),
+  "totalPl": zod.number(),
+  "avgHoldMinutes": zod.number(),
+  "byDirection": zod.array(zod.object({
+  "direction": zod.string(),
+  "total": zod.number(),
+  "winCount": zod.number(),
+  "winRate": zod.number()
+})),
+  "bySetup": zod.array(zod.object({
+  "setup": zod.string(),
+  "total": zod.number(),
+  "winCount": zod.number(),
+  "winRate": zod.number(),
+  "totalPl": zod.number()
+})),
+  "scoreRanges": zod.array(zod.object({
+  "range": zod.string(),
+  "count": zod.number()
+})),
+  "plHistory": zod.array(zod.object({
+  "time": zod.string(),
+  "pl": zod.number(),
+  "cumPl": zod.number()
+})),
+  "recentClosed": zod.array(zod.object({
+  "id": zod.number(),
+  "eventType": zod.string(),
+  "symbol": zod.string(),
+  "direction": zod.string().nullish(),
+  "setup": zod.string().nullish(),
+  "score": zod.number().nullish(),
+  "entry": zod.string().nullish(),
+  "sl": zod.string().nullish(),
+  "tp1": zod.string().nullish(),
+  "tp2": zod.string().nullish(),
+  "tp3": zod.string().nullish(),
+  "closePrice": zod.string().nullish(),
+  "plDollars": zod.string().nullish(),
+  "closeReason": zod.string().nullish(),
+  "holdMinutes": zod.number().nullish(),
+  "tpLevel": zod.string().nullish(),
+  "rsi": zod.string().nullish(),
+  "adx": zod.string().nullish(),
+  "atr": zod.string().nullish(),
+  "buyScore": zod.number().nullish(),
+  "sellScore": zod.number().nullish(),
+  "bullCount": zod.number().nullish(),
+  "bearCount": zod.number().nullish(),
+  "srStatus": zod.string().nullish(),
+  "mt5Ticket": zod.number().nullish(),
+  "sessionOk": zod.boolean().nullish(),
+  "totalSignals": zod.number().nullish(),
+  "winCount": zod.number().nullish(),
+  "lossCount": zod.number().nullish(),
+  "createdAt": zod.coerce.date()
+})),
+  "latestSnapshot": zod.object({
+  "id": zod.number(),
+  "eventType": zod.string(),
+  "symbol": zod.string(),
+  "direction": zod.string().nullish(),
+  "setup": zod.string().nullish(),
+  "score": zod.number().nullish(),
+  "entry": zod.string().nullish(),
+  "sl": zod.string().nullish(),
+  "tp1": zod.string().nullish(),
+  "tp2": zod.string().nullish(),
+  "tp3": zod.string().nullish(),
+  "closePrice": zod.string().nullish(),
+  "plDollars": zod.string().nullish(),
+  "closeReason": zod.string().nullish(),
+  "holdMinutes": zod.number().nullish(),
+  "tpLevel": zod.string().nullish(),
+  "rsi": zod.string().nullish(),
+  "adx": zod.string().nullish(),
+  "atr": zod.string().nullish(),
+  "buyScore": zod.number().nullish(),
+  "sellScore": zod.number().nullish(),
+  "bullCount": zod.number().nullish(),
+  "bearCount": zod.number().nullish(),
+  "srStatus": zod.string().nullish(),
+  "mt5Ticket": zod.number().nullish(),
+  "sessionOk": zod.boolean().nullish(),
+  "totalSignals": zod.number().nullish(),
+  "winCount": zod.number().nullish(),
+  "lossCount": zod.number().nullish(),
+  "createdAt": zod.coerce.date()
+}).nullish(),
+  "latestOpen": zod.object({
+  "id": zod.number(),
+  "eventType": zod.string(),
+  "symbol": zod.string(),
+  "direction": zod.string().nullish(),
+  "setup": zod.string().nullish(),
+  "score": zod.number().nullish(),
+  "entry": zod.string().nullish(),
+  "sl": zod.string().nullish(),
+  "tp1": zod.string().nullish(),
+  "tp2": zod.string().nullish(),
+  "tp3": zod.string().nullish(),
+  "closePrice": zod.string().nullish(),
+  "plDollars": zod.string().nullish(),
+  "closeReason": zod.string().nullish(),
+  "holdMinutes": zod.number().nullish(),
+  "tpLevel": zod.string().nullish(),
+  "rsi": zod.string().nullish(),
+  "adx": zod.string().nullish(),
+  "atr": zod.string().nullish(),
+  "buyScore": zod.number().nullish(),
+  "sellScore": zod.number().nullish(),
+  "bullCount": zod.number().nullish(),
+  "bearCount": zod.number().nullish(),
+  "srStatus": zod.string().nullish(),
+  "mt5Ticket": zod.number().nullish(),
+  "sessionOk": zod.boolean().nullish(),
+  "totalSignals": zod.number().nullish(),
+  "winCount": zod.number().nullish(),
+  "lossCount": zod.number().nullish(),
+  "createdAt": zod.coerce.date()
+}).nullish()
+})
+})
+
+

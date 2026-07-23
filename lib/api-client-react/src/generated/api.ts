@@ -16,7 +16,10 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  EaAnalyticsResponse,
+  EaReportListResponse,
   HealthStatus,
+  ListEaReportsParams,
   ListMonitorSignalsParams,
   MonitorSummaryResponse,
   SignalListResponse
@@ -275,6 +278,167 @@ export function useGetMonitorSummary<TData = Awaited<ReturnType<typeof getMonito
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetMonitorSummaryQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListEaReportsUrl = (params?: ListEaReportsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/ea/reports?${stringifiedParams}` : `/api/ea/reports`
+}
+
+/**
+ * @summary Get recent EA event reports
+ */
+export const listEaReports = async (params?: ListEaReportsParams, options?: RequestInit): Promise<EaReportListResponse> => {
+
+  return customFetch<EaReportListResponse>(getListEaReportsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListEaReportsQueryKey = (params?: ListEaReportsParams,) => {
+    return [
+    `/api/ea/reports`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListEaReportsQueryOptions = <TData = Awaited<ReturnType<typeof listEaReports>>, TError = ErrorType<unknown>>(params?: ListEaReportsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEaReports>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListEaReportsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listEaReports>>> = ({ signal }) => listEaReports(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listEaReports>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListEaReportsQueryResult = NonNullable<Awaited<ReturnType<typeof listEaReports>>>
+export type ListEaReportsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get recent EA event reports
+ */
+
+export function useListEaReports<TData = Awaited<ReturnType<typeof listEaReports>>, TError = ErrorType<unknown>>(
+ params?: ListEaReportsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEaReports>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListEaReportsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetEaAnalyticsUrl = () => {
+
+
+
+
+  return `/api/ea/analytics`
+}
+
+/**
+ * @summary Get aggregated EA performance analytics
+ */
+export const getEaAnalytics = async ( options?: RequestInit): Promise<EaAnalyticsResponse> => {
+
+  return customFetch<EaAnalyticsResponse>(getGetEaAnalyticsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetEaAnalyticsQueryKey = () => {
+    return [
+    `/api/ea/analytics`
+    ] as const;
+    }
+
+
+export const getGetEaAnalyticsQueryOptions = <TData = Awaited<ReturnType<typeof getEaAnalytics>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEaAnalytics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetEaAnalyticsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getEaAnalytics>>> = ({ signal }) => getEaAnalytics({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getEaAnalytics>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetEaAnalyticsQueryResult = NonNullable<Awaited<ReturnType<typeof getEaAnalytics>>>
+export type GetEaAnalyticsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get aggregated EA performance analytics
+ */
+
+export function useGetEaAnalytics<TData = Awaited<ReturnType<typeof getEaAnalytics>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEaAnalytics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetEaAnalyticsQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

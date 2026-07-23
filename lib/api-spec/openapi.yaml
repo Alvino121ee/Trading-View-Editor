@@ -11,6 +11,8 @@ tags:
     description: Health operations
   - name: monitor
     description: Signal monitoring dashboard
+  - name: ea
+    description: EA reporting and analytics
 paths:
   /healthz:
     get:
@@ -56,6 +58,38 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MonitorSummaryResponse"
+
+  /ea/reports:
+    get:
+      operationId: listEaReports
+      tags: [ea]
+      summary: Get recent EA event reports
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 100
+      responses:
+        "200":
+          description: EA report list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EaReportListResponse"
+
+  /ea/analytics:
+    get:
+      operationId: getEaAnalytics
+      tags: [ea]
+      summary: Get aggregated EA performance analytics
+      responses:
+        "200":
+          description: Analytics data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EaAnalyticsResponse"
 
 components:
   schemas:
@@ -165,3 +199,213 @@ components:
       required:
         - ok
         - stats
+
+    EaReport:
+      type: object
+      properties:
+        id:
+          type: integer
+        eventType:
+          type: string
+        symbol:
+          type: string
+        direction:
+          type: ["string", "null"]
+        setup:
+          type: ["string", "null"]
+        score:
+          type: ["integer", "null"]
+        entry:
+          type: ["string", "null"]
+        sl:
+          type: ["string", "null"]
+        tp1:
+          type: ["string", "null"]
+        tp2:
+          type: ["string", "null"]
+        tp3:
+          type: ["string", "null"]
+        closePrice:
+          type: ["string", "null"]
+        plDollars:
+          type: ["string", "null"]
+        closeReason:
+          type: ["string", "null"]
+        holdMinutes:
+          type: ["integer", "null"]
+        tpLevel:
+          type: ["string", "null"]
+        rsi:
+          type: ["string", "null"]
+        adx:
+          type: ["string", "null"]
+        atr:
+          type: ["string", "null"]
+        buyScore:
+          type: ["integer", "null"]
+        sellScore:
+          type: ["integer", "null"]
+        bullCount:
+          type: ["integer", "null"]
+        bearCount:
+          type: ["integer", "null"]
+        srStatus:
+          type: ["string", "null"]
+        mt5Ticket:
+          type: ["integer", "null"]
+        sessionOk:
+          type: ["boolean", "null"]
+        totalSignals:
+          type: ["integer", "null"]
+        winCount:
+          type: ["integer", "null"]
+        lossCount:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - eventType
+        - symbol
+        - createdAt
+
+    EaReportListResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        reports:
+          type: array
+          items:
+            $ref: "#/components/schemas/EaReport"
+      required:
+        - ok
+        - reports
+
+    EaDirectionStat:
+      type: object
+      properties:
+        direction:
+          type: string
+        total:
+          type: integer
+        winCount:
+          type: integer
+        winRate:
+          type: number
+      required:
+        - direction
+        - total
+        - winCount
+        - winRate
+
+    EaSetupStat:
+      type: object
+      properties:
+        setup:
+          type: string
+        total:
+          type: integer
+        winCount:
+          type: integer
+        winRate:
+          type: number
+        totalPl:
+          type: number
+      required:
+        - setup
+        - total
+        - winCount
+        - winRate
+        - totalPl
+
+    EaScoreRange:
+      type: object
+      properties:
+        range:
+          type: string
+        count:
+          type: integer
+      required:
+        - range
+        - count
+
+    EaPlPoint:
+      type: object
+      properties:
+        time:
+          type: string
+        pl:
+          type: number
+        cumPl:
+          type: number
+      required:
+        - time
+        - pl
+        - cumPl
+
+    EaAnalytics:
+      type: object
+      properties:
+        totalTrades:
+          type: integer
+        winCount:
+          type: integer
+        lossCount:
+          type: integer
+        winRate:
+          type: number
+        totalPl:
+          type: number
+        avgHoldMinutes:
+          type: integer
+        byDirection:
+          type: array
+          items:
+            $ref: "#/components/schemas/EaDirectionStat"
+        bySetup:
+          type: array
+          items:
+            $ref: "#/components/schemas/EaSetupStat"
+        scoreRanges:
+          type: array
+          items:
+            $ref: "#/components/schemas/EaScoreRange"
+        plHistory:
+          type: array
+          items:
+            $ref: "#/components/schemas/EaPlPoint"
+        recentClosed:
+          type: array
+          items:
+            $ref: "#/components/schemas/EaReport"
+        latestSnapshot:
+          type: ["object", "null"]
+          $ref: "#/components/schemas/EaReport"
+        latestOpen:
+          type: ["object", "null"]
+          $ref: "#/components/schemas/EaReport"
+      required:
+        - totalTrades
+        - winCount
+        - lossCount
+        - winRate
+        - totalPl
+        - avgHoldMinutes
+        - byDirection
+        - bySetup
+        - scoreRanges
+        - plHistory
+        - recentClosed
+
+    EaAnalyticsResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        analytics:
+          $ref: "#/components/schemas/EaAnalytics"
+      required:
+        - ok
+        - analytics

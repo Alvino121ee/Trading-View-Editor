@@ -61,7 +61,124 @@ export interface MonitorSummaryResponse {
   lastTrade?: Signal | null;
 }
 
+export interface EaReport {
+  id: number;
+  eventType: string;
+  symbol: string;
+  /** @nullable */
+  direction?: string | null;
+  /** @nullable */
+  setup?: string | null;
+  /** @nullable */
+  score?: number | null;
+  /** @nullable */
+  entry?: string | null;
+  /** @nullable */
+  sl?: string | null;
+  /** @nullable */
+  tp1?: string | null;
+  /** @nullable */
+  tp2?: string | null;
+  /** @nullable */
+  tp3?: string | null;
+  /** @nullable */
+  closePrice?: string | null;
+  /** @nullable */
+  plDollars?: string | null;
+  /** @nullable */
+  closeReason?: string | null;
+  /** @nullable */
+  holdMinutes?: number | null;
+  /** @nullable */
+  tpLevel?: string | null;
+  /** @nullable */
+  rsi?: string | null;
+  /** @nullable */
+  adx?: string | null;
+  /** @nullable */
+  atr?: string | null;
+  /** @nullable */
+  buyScore?: number | null;
+  /** @nullable */
+  sellScore?: number | null;
+  /** @nullable */
+  bullCount?: number | null;
+  /** @nullable */
+  bearCount?: number | null;
+  /** @nullable */
+  srStatus?: string | null;
+  /** @nullable */
+  mt5Ticket?: number | null;
+  /** @nullable */
+  sessionOk?: boolean | null;
+  /** @nullable */
+  totalSignals?: number | null;
+  /** @nullable */
+  winCount?: number | null;
+  /** @nullable */
+  lossCount?: number | null;
+  createdAt: string;
+}
+
+export interface EaReportListResponse {
+  ok: boolean;
+  reports: EaReport[];
+}
+
+export interface EaDirectionStat {
+  direction: string;
+  total: number;
+  winCount: number;
+  winRate: number;
+}
+
+export interface EaSetupStat {
+  setup: string;
+  total: number;
+  winCount: number;
+  winRate: number;
+  totalPl: number;
+}
+
+export interface EaScoreRange {
+  range: string;
+  count: number;
+}
+
+export interface EaPlPoint {
+  time: string;
+  pl: number;
+  cumPl: number;
+}
+
+export interface EaAnalytics {
+  totalTrades: number;
+  winCount: number;
+  lossCount: number;
+  winRate: number;
+  totalPl: number;
+  avgHoldMinutes: number;
+  byDirection: EaDirectionStat[];
+  bySetup: EaSetupStat[];
+  scoreRanges: EaScoreRange[];
+  plHistory: EaPlPoint[];
+  recentClosed: EaReport[];
+  /** @nullable */
+  latestSnapshot?: EaReport | null;
+  /** @nullable */
+  latestOpen?: EaReport | null;
+}
+
+export interface EaAnalyticsResponse {
+  ok: boolean;
+  analytics: EaAnalytics;
+}
+
 export type ListMonitorSignalsParams = {
+limit?: number;
+};
+
+export type ListEaReportsParams = {
 limit?: number;
 };
 
