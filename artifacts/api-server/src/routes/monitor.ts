@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, signalsTable } from "@workspace/db";
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq, sql, and, isNotNull } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -54,6 +54,30 @@ router.get("/monitor/summary", async (req, res): Promise<void> => {
     .orderBy(desc(signalsTable.executedAt))
     .limit(1);
 
+  // Hitung win/loss dari sinyal yang sudah ada hasilnya
+  const resultCounts = await db
+    .select({
+      result: signalsTable.result,
+      count: sql<number>`cast(count(*) as int)`,
+      totalPnl: sql<number>`cast(coalesce(sum(${signalsTable.pnl}), 0) as float)`,
+    })
+    .from(signalsTable)
+    .where(isNotNull(signalsTable.result))
+    .groupBy(signalsTable.result);
+
+  const byResult: Record<string, { count: number; totalPnl: number }> = {};
+  for (const row of resultCounts) {
+    byResult[row.result!] = { count: row.count, totalPnl: Number(row.totalPnl) };
+  }
+
+  const winCount = byResult["win"]?.count ?? 0;
+  const lossCount = byResult["loss"]?.count ?? 0;
+  const breakevenCount = byResult["breakeven"]?.count ?? 0;
+  const totalWithResult = winCount + lossCount + breakevenCount;
+  const totalPnl = Math.round(
+    ((byResult["win"]?.totalPnl ?? 0) + (byResult["loss"]?.totalPnl ?? 0) + (byResult["breakeven"]?.totalPnl ?? 0)) * 100
+  ) / 100;
+
   res.json({
     ok: true,
     stats: {
@@ -63,6 +87,14 @@ router.get("/monitor/summary", async (req, res): Promise<void> => {
       executed: byStatus["executed"] ?? 0,
       cancelled: byStatus["cancelled"] ?? 0,
       expired: byStatus["expired"] ?? 0,
+    },
+    results: {
+      win: winCount,
+      loss: lossCount,
+      breakeven: breakevenCount,
+      total: totalWithResult,
+      winRate: totalWithResult > 0 ? Math.round((winCount / totalWithResult) * 1000) / 10 : null,
+      totalPnl,
     },
     active: active ?? null,
     lastTrade: lastTrade ?? null,

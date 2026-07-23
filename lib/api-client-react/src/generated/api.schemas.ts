@@ -32,6 +32,14 @@ export interface Signal {
   status: string;
   /** @nullable */
   mt5Ticket?: number | null;
+  /** @nullable */
+  result?: string | null;
+  /** @nullable */
+  closePrice?: string | null;
+  /** @nullable */
+  pnl?: string | null;
+  /** @nullable */
+  closeReason?: string | null;
   createdAt: string;
   updatedAt: string;
   /** @nullable */
@@ -52,9 +60,20 @@ export interface MonitorStats {
   expired: number;
 }
 
+export interface SignalResults {
+  win: number;
+  loss: number;
+  breakeven: number;
+  total: number;
+  /** @nullable */
+  winRate?: number | null;
+  totalPnl: number;
+}
+
 export interface MonitorSummaryResponse {
   ok: boolean;
   stats: MonitorStats;
+  results: SignalResults;
   /** @nullable */
   active?: Signal | null;
   /** @nullable */
@@ -176,6 +195,28 @@ export interface EaAnalyticsResponse {
 
 export type ListMonitorSignalsParams = {
 limit?: number;
+};
+
+export type SetSignalResultBodyResult = typeof SetSignalResultBodyResult[keyof typeof SetSignalResultBodyResult];
+
+
+export const SetSignalResultBodyResult = {
+  win: 'win',
+  loss: 'loss',
+  breakeven: 'breakeven',
+} as const;
+
+export type SetSignalResultBody = {
+  secret?: string;
+  result: SetSignalResultBodyResult;
+  close_price?: number;
+  pnl?: number;
+  close_reason?: string;
+};
+
+export type SetSignalResult200 = {
+  ok: boolean;
+  signal: Signal;
 };
 
 export type ListEaReportsParams = {

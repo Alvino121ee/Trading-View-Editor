@@ -7,10 +7,12 @@
  */
 import type { MonitorStats } from './monitorStats';
 import type { Signal } from './signal';
+import type { SignalResults } from './signalResults';
 
 export interface MonitorSummaryResponse {
   ok: boolean;
   stats: MonitorStats;
+  results: SignalResults;
   /** @nullable */
   active?: Signal | null;
   /** @nullable */

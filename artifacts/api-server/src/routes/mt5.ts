@@ -97,6 +97,52 @@ router.post("/mt5/ack/:id", async (req, res): Promise<void> => {
   res.json({ ok: true, signal });
 });
 
+// ── POST /api/mt5/result/:id ────────────────────────────────────────
+// EA melaporkan hasil trade setelah posisi ditutup (win/loss/breakeven).
+// Dipanggil EA pada event CLOSE setelah posisi selesai.
+router.post("/mt5/result/:id", async (req, res): Promise<void> => {
+  const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(rawId, 10);
+
+  if (isNaN(id)) {
+    res.status(400).json({ error: "Invalid signal id" });
+    return;
+  }
+
+  const { secret, result, close_price, pnl, close_reason } = req.body;
+
+  if (secret && secret !== WEBHOOK_SECRET) {
+    res.status(401).json({ error: "Invalid secret" });
+    return;
+  }
+
+  const allowed = ["win", "loss", "breakeven"];
+  if (!result || !allowed.includes(String(result).toLowerCase())) {
+    res.status(400).json({ error: `result harus salah satu dari: ${allowed.join(", ")}` });
+    return;
+  }
+
+  const [signal] = await db
+    .update(signalsTable)
+    .set({
+      result: String(result).toLowerCase(),
+      closePrice: close_price != null ? String(close_price) : null,
+      pnl: pnl != null ? String(pnl) : null,
+      closeReason: close_reason != null ? String(close_reason) : null,
+      updatedAt: new Date(),
+    })
+    .where(eq(signalsTable.id, id))
+    .returning();
+
+  if (!signal) {
+    res.status(404).json({ error: "Signal not found" });
+    return;
+  }
+
+  req.log.info({ id, result, pnl }, "Signal result recorded");
+  res.json({ ok: true, signal });
+});
+
 // ── GET /api/mt5/signals ────────────────────────────────────────────
 // View recent signal history (for debugging).
 router.get("/mt5/signals", async (req, res): Promise<void> => {

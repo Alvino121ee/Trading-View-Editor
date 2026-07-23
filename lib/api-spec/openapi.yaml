@@ -59,6 +59,53 @@ paths:
               schema:
                 $ref: "#/components/schemas/MonitorSummaryResponse"
 
+  /mt5/result/{id}:
+    post:
+      operationId: setSignalResult
+      tags: [monitor]
+      summary: EA melaporkan hasil trade (win/loss/breakeven)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                secret:
+                  type: string
+                result:
+                  type: string
+                  enum: [win, loss, breakeven]
+                close_price:
+                  type: number
+                pnl:
+                  type: number
+                close_reason:
+                  type: string
+              required:
+                - result
+      responses:
+        "200":
+          description: Result recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  signal:
+                    $ref: "#/components/schemas/Signal"
+                required:
+                  - ok
+                  - signal
+
   /ea/reports:
     get:
       operationId: listEaReports
@@ -130,6 +177,14 @@ components:
           type: string
         mt5Ticket:
           type: ["integer", "null"]
+        result:
+          type: ["string", "null"]
+        closePrice:
+          type: ["string", "null"]
+        pnl:
+          type: ["string", "null"]
+        closeReason:
+          type: ["string", "null"]
         createdAt:
           type: string
           format: date-time
@@ -183,6 +238,28 @@ components:
         - cancelled
         - expired
 
+    SignalResults:
+      type: object
+      properties:
+        win:
+          type: integer
+        loss:
+          type: integer
+        breakeven:
+          type: integer
+        total:
+          type: integer
+        winRate:
+          type: ["number", "null"]
+        totalPnl:
+          type: number
+      required:
+        - win
+        - loss
+        - breakeven
+        - total
+        - totalPnl
+
     MonitorSummaryResponse:
       type: object
       properties:
@@ -190,6 +267,8 @@ components:
           type: boolean
         stats:
           $ref: "#/components/schemas/MonitorStats"
+        results:
+          $ref: "#/components/schemas/SignalResults"
         active:
           type: ["object", "null"]
           $ref: "#/components/schemas/Signal"
@@ -199,6 +278,7 @@ components:
       required:
         - ok
         - stats
+        - results
 
     EaReport:
       type: object

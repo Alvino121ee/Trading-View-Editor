@@ -25,6 +25,14 @@ export const signalsTable = pgTable("signals", {
   // pending → sent → executed | cancelled | expired
   status: text("status").notNull().default("pending"),
   mt5Ticket: bigint("mt5_ticket", { mode: "number" }),
+
+  // Win/Loss tracking — diisi oleh EA setelah posisi ditutup
+  // null = belum ada hasil (posisi masih open atau belum dilapor)
+  result: text("result"), // win | loss | breakeven
+  closePrice: numeric("close_price", { precision: 18, scale: 5 }),
+  pnl: numeric("pnl", { precision: 10, scale: 2 }), // P&L dalam USD
+  closeReason: text("close_reason"), // TP1 | TP2 | TP3 | SL | MANUAL | REVERSAL
+
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

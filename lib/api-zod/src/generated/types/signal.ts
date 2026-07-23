@@ -29,6 +29,14 @@ export interface Signal {
   status: string;
   /** @nullable */
   mt5Ticket?: number | null;
+  /** @nullable */
+  result?: string | null;
+  /** @nullable */
+  closePrice?: string | null;
+  /** @nullable */
+  pnl?: string | null;
+  /** @nullable */
+  closeReason?: string | null;
   createdAt: Date;
   updatedAt: Date;
   /** @nullable */

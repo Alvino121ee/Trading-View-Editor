@@ -41,6 +41,10 @@ export const ListMonitorSignalsResponse = zod.object({
   "comment": zod.string().nullish(),
   "status": zod.string(),
   "mt5Ticket": zod.number().nullish(),
+  "result": zod.string().nullish(),
+  "closePrice": zod.string().nullish(),
+  "pnl": zod.string().nullish(),
+  "closeReason": zod.string().nullish(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
   "executedAt": zod.coerce.date().nullish()
@@ -61,6 +65,14 @@ export const GetMonitorSummaryResponse = zod.object({
   "cancelled": zod.number(),
   "expired": zod.number()
 }),
+  "results": zod.object({
+  "win": zod.number(),
+  "loss": zod.number(),
+  "breakeven": zod.number(),
+  "total": zod.number(),
+  "winRate": zod.number().nullish(),
+  "totalPnl": zod.number()
+}),
   "active": zod.object({
   "id": zod.number(),
   "action": zod.string(),
@@ -75,6 +87,10 @@ export const GetMonitorSummaryResponse = zod.object({
   "comment": zod.string().nullish(),
   "status": zod.string(),
   "mt5Ticket": zod.number().nullish(),
+  "result": zod.string().nullish(),
+  "closePrice": zod.string().nullish(),
+  "pnl": zod.string().nullish(),
+  "closeReason": zod.string().nullish(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
   "executedAt": zod.coerce.date().nullish()
@@ -93,10 +109,56 @@ export const GetMonitorSummaryResponse = zod.object({
   "comment": zod.string().nullish(),
   "status": zod.string(),
   "mt5Ticket": zod.number().nullish(),
+  "result": zod.string().nullish(),
+  "closePrice": zod.string().nullish(),
+  "pnl": zod.string().nullish(),
+  "closeReason": zod.string().nullish(),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
   "executedAt": zod.coerce.date().nullish()
 }).nullish()
+})
+
+
+/**
+ * @summary EA melaporkan hasil trade (win/loss/breakeven)
+ */
+export const SetSignalResultParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const SetSignalResultBody = zod.object({
+  "secret": zod.string().optional(),
+  "result": zod.enum(['win', 'loss', 'breakeven']),
+  "close_price": zod.number().optional(),
+  "pnl": zod.number().optional(),
+  "close_reason": zod.string().optional()
+})
+
+export const SetSignalResultResponse = zod.object({
+  "ok": zod.boolean(),
+  "signal": zod.object({
+  "id": zod.number(),
+  "action": zod.string(),
+  "symbol": zod.string(),
+  "lot": zod.string().nullish(),
+  "entry": zod.string().nullish(),
+  "sl": zod.string().nullish(),
+  "tp1": zod.string().nullish(),
+  "tp2": zod.string().nullish(),
+  "tp3": zod.string().nullish(),
+  "setup": zod.string().nullish(),
+  "comment": zod.string().nullish(),
+  "status": zod.string(),
+  "mt5Ticket": zod.number().nullish(),
+  "result": zod.string().nullish(),
+  "closePrice": zod.string().nullish(),
+  "pnl": zod.string().nullish(),
+  "closeReason": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "executedAt": zod.coerce.date().nullish()
+})
 })
 
 

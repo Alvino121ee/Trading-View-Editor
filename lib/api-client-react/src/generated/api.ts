@@ -6,11 +6,15 @@
  * OpenAPI spec version: 0.1.0
  */
 import {
+  useMutation,
   useQuery
 } from '@tanstack/react-query';
 import type {
+  MutationFunction,
   QueryFunction,
   QueryKey,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult
 } from '@tanstack/react-query';
@@ -22,11 +26,13 @@ import type {
   ListEaReportsParams,
   ListMonitorSignalsParams,
   MonitorSummaryResponse,
+  SetSignalResult200,
+  SetSignalResultBody,
   SignalListResponse
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
-import type { ErrorType } from '../custom-fetch';
+import type { ErrorType , BodyType } from '../custom-fetch';
 
 type AwaitedInput<T> = PromiseLike<T> | T;
 
@@ -289,6 +295,78 @@ export function useGetMonitorSummary<TData = Awaited<ReturnType<typeof getMonito
 
 
 
+
+export const getSetSignalResultUrl = (id: number,) => {
+
+
+
+
+  return `/api/mt5/result/${id}`
+}
+
+/**
+ * @summary EA melaporkan hasil trade (win/loss/breakeven)
+ */
+export const setSignalResult = async (id: number,
+    setSignalResultBody: SetSignalResultBody, options?: RequestInit): Promise<SetSignalResult200> => {
+
+  return customFetch<SetSignalResult200>(getSetSignalResultUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(setSignalResultBody)
+  }
+);}
+
+
+
+
+
+export const getSetSignalResultMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setSignalResult>>, TError,{id: number;data: BodyType<SetSignalResultBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setSignalResult>>, TError,{id: number;data: BodyType<SetSignalResultBody>}, TContext> => {
+
+const mutationKey = ['setSignalResult'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setSignalResult>>, {id: number;data: BodyType<SetSignalResultBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  setSignalResult(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetSignalResultMutationResult = NonNullable<Awaited<ReturnType<typeof setSignalResult>>>
+    export type SetSignalResultMutationBody = BodyType<SetSignalResultBody>
+    export type SetSignalResultMutationError = ErrorType<unknown>
+
+    /**
+ * @summary EA melaporkan hasil trade (win/loss/breakeven)
+ */
+export const useSetSignalResult = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setSignalResult>>, TError,{id: number;data: BodyType<SetSignalResultBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setSignalResult>>,
+        TError,
+        {id: number;data: BodyType<SetSignalResultBody>},
+        TContext
+      > => {
+      return useMutation(getSetSignalResultMutationOptions(options));
+    }
 
 export const getListEaReportsUrl = (params?: ListEaReportsParams,) => {
   const normalizedParams = new URLSearchParams();
