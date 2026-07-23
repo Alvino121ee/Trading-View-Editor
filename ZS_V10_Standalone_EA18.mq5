@@ -1364,7 +1364,7 @@ void DrawPanel()
    // ══════════════════════════════════════════
    // [3] STOCHASTIC GAUGE
    // ══════════════════════════════════════════
-   PanelRect("SEP_ST",x,row,W,1,C'28,32,60'),row+=3;
+   PanelRect("SEP_ST",x,row,W,1,C'28,32,60'); row+=3;
    PanelLabel("SEC_ST"," ◆ STOCHASTIC",lx+20,row,C'80,160,255',fsS); row+=lh-1;
 
    color stKcol = (gStochK>=InpStochSellLevel)?C'255,55,55':(gStochK<=InpStochBuyLevel)?C'0,230,90':C'160,180,220';
