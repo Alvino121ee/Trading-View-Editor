@@ -198,7 +198,8 @@ bool   gSessionOK      = false;
 int    gMinQuality     = 82;
 int    gWinCount       = 0;
 int    gLossCount      = 0;
-int    gTotalSignals   = 0;
+int    gTotalSignals   = 0;   // total trade dibuka sejak EA aktif
+double gTotalClosedPL  = 0.0; // akumulasi P&L semua trade yang sudah tutup
 string gLastReversalInfo = "";   // "SELL→BUY @ 3185.20"
 bool   gReversalAlert  = false;  // flash saat reversal baru terjadi
 int    gReversalFlash  = 0;      // countdown flash
@@ -566,6 +567,43 @@ void ResetPending()
 }
 
 //+------------------------------------------------------------------+
+// Ambil P&L trade terakhir yang sudah ditutup dari history akun
+//+------------------------------------------------------------------+
+double GetLastClosedPL()
+{
+   double pl = 0;
+   datetime from = gOpenTime > 0 ? gOpenTime - 60 : TimeCurrent() - 86400;
+   if(!HistorySelect(from, TimeCurrent())) return 0;
+   for(int i = HistoryDealsTotal()-1; i >= 0; i--)
+   {
+      ulong ticket = HistoryDealGetTicket(i);
+      if(ticket == 0) continue;
+      if((long)HistoryDealGetInteger(ticket, DEAL_MAGIC) != InpMagicNumber) continue;
+      if(HistoryDealGetString(ticket, DEAL_SYMBOL) != InpSymbol) continue;
+      if(HistoryDealGetInteger(ticket, DEAL_ENTRY) == DEAL_ENTRY_OUT ||
+         HistoryDealGetInteger(ticket, DEAL_ENTRY) == DEAL_ENTRY_INOUT)
+      {
+         pl += HistoryDealGetDouble(ticket, DEAL_PROFIT)
+             + HistoryDealGetDouble(ticket, DEAL_SWAP)
+             + HistoryDealGetDouble(ticket, DEAL_COMMISSION);
+      }
+   }
+   return pl;
+}
+
+//+------------------------------------------------------------------+
+// Update statistik saat trade ditutup
+//+------------------------------------------------------------------+
+void UpdateStatsOnClose(double pl)
+{
+   gTotalClosedPL += pl;
+   if(pl >= 0) gWinCount++;
+   else        gLossCount++;
+   Print(StringFormat("Trade ditutup | P&L=%.2f | W:%d L:%d | Total PL=%.2f",
+         pl, gWinCount, gLossCount, gTotalClosedPL));
+}
+
+//+------------------------------------------------------------------+
 // Cek Stochastic lalu eksekusi pending signal (dipanggil setiap tick)
 //+------------------------------------------------------------------+
 void CheckStochEntry()
@@ -641,7 +679,6 @@ void CheckStochEntry()
       gDir=gPendingDir; gHitTP1=false; gHitTP2=false;
       gOpenTime=TimeCurrent();
       gTotalSignals++;
-      gLossCount++;
       gPanelStatus = (gPendingDir==1) ? "BUY ACTIVE" : "SELL ACTIVE";
       gPanelSetup  = gPendingSetup;
       Print(StringFormat(">>> STOCH ENTRY %s | %s | Score=%d | StochK=%.1f | Entry=%.2f | SL=%.2f | TP1=%.2f | TP2=%.2f | TP3=%.2f",
@@ -671,9 +708,9 @@ void ManageTrailingStop()
       if(gTP3>0 && now>=gTP3)
       {
          Print("TP3 TERCAPAI! Close ALL BUY + cancel pending");
-         gLossCount--; gWinCount++;
          double plTP3Buy = CalcCurrentPL();
          CloseMyPositions();
+         UpdateStatsOnClose(plTP3Buy);
          SendReport("CLOSE", "TP3", gTP3, plTP3Buy);
          ResetTrade();
          return;
@@ -686,9 +723,9 @@ void ManageTrailingStop()
       if(gTP3>0 && now<=gTP3)
       {
          Print("TP3 TERCAPAI! Close ALL SELL + cancel pending");
-         gLossCount--; gWinCount++;
          double plTP3Sell = CalcCurrentPL();
          CloseMyPositions();
+         UpdateStatsOnClose(plTP3Sell);
          SendReport("CLOSE", "TP3", gTP3, plTP3Sell);
          ResetTrade();
          return;
@@ -762,14 +799,20 @@ void OnTick()
          Print("Max hold time tercapai (", InpMaxHoldMinutes, " min). Menutup posisi.");
          double plTimeout = CalcCurrentPL();
          double closeTimeout = (gDir==1)?SymbolInfoDouble(InpSymbol,SYMBOL_BID):SymbolInfoDouble(InpSymbol,SYMBOL_ASK);
-         CloseMyPositions(); ResetTrade();
+         CloseMyPositions();
+         UpdateStatsOnClose(plTimeout);
          SendReport("CLOSE", "TIMEOUT", closeTimeout, plTimeout);
+         ResetTrade();
          if(InpShowPanel) DrawPanel();
          return;
       }
    }
    else if(!HasActivePosition() && gDir != 0)
    {
+      // Posisi ditutup eksternal (SL kena broker) — ambil P&L dari history
+      double plSL = GetLastClosedPL();
+      UpdateStatsOnClose(plSL);
+      SendReport("CLOSE", "SL", (gDir==1)?SymbolInfoDouble(InpSymbol,SYMBOL_BID):SymbolInfoDouble(InpSymbol,SYMBOL_ASK), plSL);
       ResetTrade();
    }
 
@@ -1014,6 +1057,7 @@ void CheckSignal(int currentBars)
                " | Score=", revScore, " | @ ", DoubleToString(revPrice, (int)SymbolInfoInteger(InpSymbol, SYMBOL_DIGITS)));
          double plRev = CalcCurrentPL();
          CloseMyPositions();
+         UpdateStatsOnClose(plRev);
          gDir = 0;
          gLastReversalInfo = revFrom + "→" + revTo + " @" + DoubleToString(revPrice, 2);
          gReversalAlert    = true;
@@ -1131,7 +1175,6 @@ void CheckSignal(int currentBars)
       gDir=finalDir; gHitTP1=false; gHitTP2=false;
       gOpenTime=TimeCurrent();
       gTotalSignals++;
-      gLossCount++;
       gPanelStatus=(finalDir==1)?"BUY ACTIVE":"SELL ACTIVE";
       gPanelSetup=setupClass;
       Print(StringFormat(">>> %s | %s | Score=%d | Entry=%.2f | SL=%.2f | TP1=%.2f | TP2=%.2f | TP3=%.2f | Layer=$%.2f",
@@ -1146,101 +1189,92 @@ void CheckSignal(int currentBars)
 //  PANEL HELPERS
 //==========================================================================
 
-// Progress bar: filled = █  empty = ░
 string ProgBar(double val, double maxVal, int width)
 {
    if(maxVal <= 0) return "";
-   int filled = (int)MathRound(MathMin(MathMax(val, 0) / maxVal, 1.0) * width);
+   int filled = (int)MathRound(MathMin(MathMax(val,0)/maxVal,1.0)*width);
    string bar = "";
-   for(int i = 0; i < width; i++)
-      bar += (i < filled) ? "█" : "░";
+   for(int i=0;i<width;i++) bar += (i<filled)?"█":"░";
    return bar;
 }
 
-// Score bar with percentage text
 string ScoreBar(int score, int minQ, int width)
 {
-   int maxScore = 140; // approximate max possible score
-   int filled   = (int)MathRound(MathMin((double)score / maxScore, 1.0) * width);
-   string bar   = "";
-   for(int i = 0; i < width; i++)
-      bar += (i < filled) ? "▓" : "░";
+   int maxScore=140;
+   int filled=(int)MathRound(MathMin((double)score/maxScore,1.0)*width);
+   string bar="";
+   for(int i=0;i<width;i++) bar+=(i<filled)?"▓":"░";
    return bar;
 }
 
-// TP progress bar: progress from entry toward TP level, clipped 0-width
 string TPBar(double curPrice, double entry, double tp, int width, bool isBuy)
 {
-   if(entry == 0 || tp == 0 || entry == tp) return StringFormat("%.*s", width, "░░░░░░░░░░░░░░░░");
-   double range    = MathAbs(tp - entry);
-   double progress = isBuy ? (curPrice - entry) : (entry - curPrice);
-   int    filled   = (int)MathRound(MathMin(MathMax(progress / range, 0.0), 1.0) * width);
-   string bar = "";
-   for(int i = 0; i < width; i++)
-      bar += (i < filled) ? "█" : "░";
+   if(entry==0||tp==0||entry==tp){ string e=""; for(int i=0;i<width;i++) e+="░"; return e; }
+   double range=MathAbs(tp-entry);
+   double progress=isBuy?(curPrice-entry):(entry-curPrice);
+   int filled=(int)MathRound(MathMin(MathMax(progress/range,0.0),1.0)*width);
+   string bar="";
+   for(int i=0;i<width;i++) bar+=(i<filled)?"█":"░";
    return bar;
 }
 
-// Object helpers
 void PanelLabel(string name, string text, int x, int y, color clr, int fontSize=0)
 {
-   string fullName = PANEL_PREFIX + name;
-   int fs = fontSize > 0 ? fontSize : InpPanelFontSize;
-   if(ObjectFind(0, fullName) < 0)
+   string fullName=PANEL_PREFIX+name;
+   int fs=fontSize>0?fontSize:InpPanelFontSize;
+   if(ObjectFind(0,fullName)<0)
    {
-      ObjectCreate(0, fullName, OBJ_LABEL, 0, 0, 0);
-      ObjectSetInteger(0, fullName, OBJPROP_CORNER,     CORNER_RIGHT_UPPER);
-      ObjectSetInteger(0, fullName, OBJPROP_ANCHOR,     ANCHOR_RIGHT_UPPER);
-      ObjectSetString (0, fullName, OBJPROP_FONT,       "Courier New");
-      ObjectSetInteger(0, fullName, OBJPROP_BACK,       false);
-      ObjectSetInteger(0, fullName, OBJPROP_SELECTABLE, false);
+      ObjectCreate(0,fullName,OBJ_LABEL,0,0,0);
+      ObjectSetInteger(0,fullName,OBJPROP_CORNER,    CORNER_RIGHT_UPPER);
+      ObjectSetInteger(0,fullName,OBJPROP_ANCHOR,    ANCHOR_RIGHT_UPPER);
+      ObjectSetString (0,fullName,OBJPROP_FONT,      "Courier New");
+      ObjectSetInteger(0,fullName,OBJPROP_BACK,      false);
+      ObjectSetInteger(0,fullName,OBJPROP_SELECTABLE,false);
    }
-   ObjectSetString (0, fullName, OBJPROP_TEXT,      text);
-   ObjectSetInteger(0, fullName, OBJPROP_XDISTANCE, x);
-   ObjectSetInteger(0, fullName, OBJPROP_YDISTANCE, y);
-   ObjectSetInteger(0, fullName, OBJPROP_COLOR,     clr);
-   ObjectSetInteger(0, fullName, OBJPROP_FONTSIZE,  fs);
+   ObjectSetString (0,fullName,OBJPROP_TEXT,     text);
+   ObjectSetInteger(0,fullName,OBJPROP_XDISTANCE,x);
+   ObjectSetInteger(0,fullName,OBJPROP_YDISTANCE,y);
+   ObjectSetInteger(0,fullName,OBJPROP_COLOR,    clr);
+   ObjectSetInteger(0,fullName,OBJPROP_FONTSIZE, fs);
 }
 
-void PanelRect(string name, int x, int y, int w, int h, color bgColor, color borderColor = C'40,40,60')
+void PanelRect(string name, int x, int y, int w, int h, color bgColor, color borderColor=C'40,40,60')
 {
-   string fullName = PANEL_PREFIX + name;
-   if(ObjectFind(0, fullName) < 0)
+   string fullName=PANEL_PREFIX+name;
+   if(ObjectFind(0,fullName)<0)
    {
-      ObjectCreate(0, fullName, OBJ_RECTANGLE_LABEL, 0, 0, 0);
-      ObjectSetInteger(0, fullName, OBJPROP_CORNER,      CORNER_RIGHT_UPPER);
-      ObjectSetInteger(0, fullName, OBJPROP_ANCHOR,      ANCHOR_RIGHT_UPPER);
-      ObjectSetInteger(0, fullName, OBJPROP_BACK,        true);
-      ObjectSetInteger(0, fullName, OBJPROP_SELECTABLE,  false);
-      ObjectSetInteger(0, fullName, OBJPROP_BORDER_TYPE, BORDER_FLAT);
+      ObjectCreate(0,fullName,OBJ_RECTANGLE_LABEL,0,0,0);
+      ObjectSetInteger(0,fullName,OBJPROP_CORNER,     CORNER_RIGHT_UPPER);
+      ObjectSetInteger(0,fullName,OBJPROP_ANCHOR,     ANCHOR_RIGHT_UPPER);
+      ObjectSetInteger(0,fullName,OBJPROP_BACK,       true);
+      ObjectSetInteger(0,fullName,OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0,fullName,OBJPROP_BORDER_TYPE,BORDER_FLAT);
    }
-   ObjectSetInteger(0, fullName, OBJPROP_XDISTANCE,   x);
-   ObjectSetInteger(0, fullName, OBJPROP_YDISTANCE,   y);
-   ObjectSetInteger(0, fullName, OBJPROP_XSIZE,       w);
-   ObjectSetInteger(0, fullName, OBJPROP_YSIZE,       h);
-   ObjectSetInteger(0, fullName, OBJPROP_BGCOLOR,     bgColor);
-   ObjectSetInteger(0, fullName, OBJPROP_BORDER_COLOR,borderColor);
+   ObjectSetInteger(0,fullName,OBJPROP_XDISTANCE,  x);
+   ObjectSetInteger(0,fullName,OBJPROP_YDISTANCE,  y);
+   ObjectSetInteger(0,fullName,OBJPROP_XSIZE,      w);
+   ObjectSetInteger(0,fullName,OBJPROP_YSIZE,      h);
+   ObjectSetInteger(0,fullName,OBJPROP_BGCOLOR,    bgColor);
+   ObjectSetInteger(0,fullName,OBJPROP_BORDER_COLOR,borderColor);
 }
 
 void PanelDelete()
 {
-   int total = ObjectsTotal(0, 0, -1);
-   for(int i = total-1; i >= 0; i--)
+   int total=ObjectsTotal(0,0,-1);
+   for(int i=total-1;i>=0;i--)
    {
-      string name = ObjectName(0, i, 0, -1);
-      if(StringFind(name, PANEL_PREFIX) == 0)
-         ObjectDelete(0, name);
+      string name=ObjectName(0,i,0,-1);
+      if(StringFind(name,PANEL_PREFIX)==0) ObjectDelete(0,name);
    }
 }
 
 void PanelCreate()
 {
-   PanelRect("BG",       InpPanelX, InpPanelY, 310, 600, C'10,12,22');
-   PanelRect("BG_TITLE", InpPanelX, InpPanelY, 310, 24,  C'18,20,42');
+   PanelRect("BG", InpPanelX, InpPanelY, 340, 700, C'8,10,20');
 }
 
 //==========================================================================
-//  DRAW PANEL — called every tick
+//  DRAW PANEL v3 — Ultra Modern
 //==========================================================================
 void DrawPanel()
 {
@@ -1248,332 +1282,300 @@ void DrawPanel()
 
    int x   = InpPanelX;
    int y0  = InpPanelY;
-   int lh  = InpPanelFontSize + 6;
    int fs  = InpPanelFontSize;
-   int fsS = MathMax(fs - 1, 7);  // small font
-   int px  = x + 6;               // right margin for value column (closer to right edge)
-   int lx  = px + 150;            // label column (further from right = further left on screen)
-   int W   = 310;
+   int fsS = MathMax(fs-1,7);
+   int lh  = fs + 7;
+   int W   = 340;
+   // lx = label anchor (right edge of label col), px = value anchor
+   int lx  = x + 6 + 170;
+   int px  = x + 6;
 
-   // ── Spread ──
-   double spread = SymbolInfoInteger(InpSymbol, SYMBOL_SPREAD) * SymbolInfoDouble(InpSymbol, SYMBOL_POINT);
-
-   // ── Current price & P/L ──
-   double curPrice = (gDir==1) ? SymbolInfoDouble(InpSymbol, SYMBOL_BID)
-                                : SymbolInfoDouble(InpSymbol, SYMBOL_ASK);
-   double totalPL  = 0;
+   // ── Live data ──
+   double spread   = SymbolInfoInteger(InpSymbol,SYMBOL_SPREAD)*SymbolInfoDouble(InpSymbol,SYMBOL_POINT);
+   double curPrice = (gDir==1)?SymbolInfoDouble(InpSymbol,SYMBOL_BID):SymbolInfoDouble(InpSymbol,SYMBOL_ASK);
+   double floatPL  = 0;
    int    posCount = 0;
-   for(int i = 0; i < PositionsTotal(); i++)
+   for(int i=0;i<PositionsTotal();i++)
    {
       if(!posInfo.SelectByIndex(i)) continue;
       if(posInfo.Magic()==InpMagicNumber && posInfo.Symbol()==InpSymbol)
-      {
-         totalPL += posInfo.Profit() + posInfo.Swap();
-         posCount++;
-      }
+      { floatPL+=posInfo.Profit()+posInfo.Swap(); posCount++; }
    }
+   bool hasTrade = (gDir!=0 && HasActivePosition());
+   int  holdMin  = hasTrade?(int)((TimeCurrent()-gOpenTime)/60):0;
 
-   bool   hasTrade = (gDir != 0 && HasActivePosition());
-   int    holdMin  = hasTrade ? (int)((TimeCurrent()-gOpenTime)/60) : 0;
-
-   // ── Status color ──
-   color statusBG, statusFG;
-   if     (gPanelStatus=="BUY ACTIVE")    { statusBG=C'0,60,20';   statusFG=C'0,255,100'; }
-   else if(gPanelStatus=="SELL ACTIVE")   { statusBG=C'60,0,10';   statusFG=C'255,60,60'; }
-   else if(gPanelStatus=="PREDICT BUY")   { statusBG=C'0,40,15';   statusFG=C'0,200,80';  }
-   else if(gPanelStatus=="PREDICT SELL")  { statusBG=C'40,5,5';    statusFG=C'220,50,50'; }
-   else if(gPanelStatus=="COOLDOWN")      { statusBG=C'40,25,0';   statusFG=clrOrange;    }
-   else if(gPanelStatus=="SESSION OFF")   { statusBG=C'25,25,25';  statusFG=clrGray;      }
-   else                                   { statusBG=C'18,18,35';  statusFG=C'120,120,160'; }
-
-   // ── Reversal flash color ──
-   if(gReversalAlert)
-   {
-      statusBG = C'50,20,0';
-      statusFG = clrOrange;
-   }
-
-   int row = y0 + 2;
-
-   // ════════════════════════════════════
-   // HEADER
-   // ════════════════════════════════════
-   PanelRect("HDR", x, row, W, lh+4, C'18,20,45', C'60,80,160');
-   PanelLabel("T_EA",   " ⚡ ZS V10 SR PRECISION PRO", lx+10, row+3, clrGold, fs+1);
-   row += lh + 6;
-
-   // Symbol | Spread | Time
    MqlDateTime mt;
-   TimeToStruct(TimeCurrent(), mt);
-   string timeStr = StringFormat("%02d:%02d:%02d", mt.hour, mt.min, mt.sec);
-   PanelLabel("T_SYM", StringFormat(" %s  Spd:%.1f  %s UTC", InpSymbol, spread, timeStr), lx+10, row, C'140,160,200', fsS);
-   row += lh;
+   TimeToStruct(TimeCurrent(),mt);
+   string timeStr=StringFormat("%02d:%02d:%02d",mt.hour,mt.min,mt.sec);
 
-   // ════════════════════════════════════
-   // STATUS BOX (full width, color block)
-   // ════════════════════════════════════
-   PanelRect("STBG", x, row, W, lh+6, statusBG, statusFG);
-   string statusText = gReversalAlert
-      ? StringFormat(" ⚡ REVERSAL! %s", gLastReversalInfo)
-      : StringFormat(" %s", gPanelStatus);
-   if(StringLen(gPanelSetup) > 1 && !gReversalAlert)
-      statusText += "  [" + gPanelSetup + "]";
-   PanelLabel("V_STATUS", statusText, lx+10, row+3, statusFG, fs+1);
-   row += lh + 8;
+   // ── Status colors ──
+   color sBG,sFG;
+   bool isPending = (gPendingDir!=0);
+   if     (gReversalAlert)                             { sBG=C'55,22,0';    sFG=C'255,165,0';  }
+   else if(gPanelStatus=="BUY ACTIVE")                 { sBG=C'0,55,18';    sFG=C'0,255,100';  }
+   else if(gPanelStatus=="SELL ACTIVE")                { sBG=C'55,0,8';     sFG=C'255,55,55';  }
+   else if(isPending && gPendingDir== 1)               { sBG=C'0,35,55';    sFG=C'0,180,255';  }
+   else if(isPending && gPendingDir==-1)               { sBG=C'40,15,55';   sFG=C'200,100,255';}
+   else if(gPanelStatus=="PREDICT BUY")                { sBG=C'0,38,12';    sFG=C'0,200,80';   }
+   else if(gPanelStatus=="PREDICT SELL")               { sBG=C'38,5,5';     sFG=C'220,50,50';  }
+   else if(gPanelStatus=="COOLDOWN")                   { sBG=C'38,22,0';    sFG=clrOrange;     }
+   else if(gPanelStatus=="SESSION OFF")                { sBG=C'22,22,22';   sFG=C'80,80,80';   }
+   else                                                { sBG=C'15,17,32';   sFG=C'110,115,155';}
 
-   // Reverse mode tag
+   int row = y0+2;
+
+   // ══════════════════════════════════════════
+   // [1] HEADER BAR
+   // ══════════════════════════════════════════
+   PanelRect("HDR",  x, row, W, lh+6, C'14,16,38', C'50,70,160');
+   PanelLabel("T_TITLE"," ⚡ ZS V10  SR PRECISION PRO  v3", lx+20, row+4, clrGold, fs+1);
+   row+=lh+8;
+
+   // Sub-header: symbol / spread / time
+   PanelRect("SUBBG", x, row, W, lh+2, C'10,12,28', C'30,35,70');
+   PanelLabel("T_SYM", StringFormat(" %s", InpSymbol),             lx+20, row+2, C'200,210,255', fsS);
+   PanelLabel("T_SPD", StringFormat("Spd:%.1f", spread),           px+180,row+2, C'120,130,170', fsS);
+   PanelLabel("T_TIME",StringFormat("%s UTC", timeStr),             px+60, row+2, C'100,120,180', fsS);
+   row+=lh+4;
+
+   // ══════════════════════════════════════════
+   // [2] STATUS BOX
+   // ══════════════════════════════════════════
+   PanelRect("STBG", x, row, W, lh+8, sBG, sFG);
+   string statusTxt;
+   if(gReversalAlert)
+      statusTxt = StringFormat(" ⚡ FLIP! %s", gLastReversalInfo);
+   else if(isPending)
+      statusTxt = StringFormat(" ◉ WAIT STOCH %s  K=%.1f (need%s%d)",
+                  gPendingDir>0?"BUY":"SELL", gStochK,
+                  gPendingDir>0?"<=":">= ", gPendingDir>0?InpStochBuyLevel:InpStochSellLevel);
+   else
+      statusTxt = " " + gPanelStatus + (StringLen(gPanelSetup)>1?" ["+gPanelSetup+"]":"");
+   PanelLabel("V_STATUS", statusTxt, lx+20, row+4, sFG, fs+1);
+   row+=lh+10;
+
    if(InpReverseMode)
    {
-      PanelRect("REVBG", x, row, W, lh+2, C'45,20,0', clrOrange);
-      PanelLabel("V_REV", " ⟲  REVERSE MODE ACTIVE", lx+10, row+2, clrOrange, fsS);
-      row += lh + 4;
+      PanelRect("REVBG",x,row,W,lh+2,C'42,18,0',clrOrange);
+      PanelLabel("V_REV"," ⟲  REVERSE MODE AKTIF",lx+20,row+2,clrOrange,fsS);
+      row+=lh+4;
    }
 
-   // ════════════════════════════════════
-   // SECTION: SIGNAL STRENGTH
-   // ════════════════════════════════════
-   PanelLabel("SEC1", " ▸ SIGNAL STRENGTH", lx+10, row, C'100,120,200', fsS);
-   row += lh - 2;
+   // ══════════════════════════════════════════
+   // [3] STOCHASTIC GAUGE
+   // ══════════════════════════════════════════
+   PanelRect("SEP_ST",x,row,W,1,C'28,32,60'),row+=3;
+   PanelLabel("SEC_ST"," ◆ STOCHASTIC",lx+20,row,C'80,160,255',fsS); row+=lh-1;
 
-   // BUY score bar
-   int    buyPct   = (int)MathRound(gBuyScore * 100.0 / 140);
-   string buyBar   = ScoreBar(gBuyScore, gMinQuality, 12);
-   color  buySCL   = gBuyScore >= gMinQuality ? C'0,230,80' : C'80,80,100';
-   color  buyLbl   = gBuyScore >= gMinQuality ? C'0,230,80' : C'160,160,180';
-   PanelLabel("L_BS", " BUY ", lx+10, row, buyLbl, fsS);
-   PanelLabel("B_BS", buyBar,   px+50, row, buySCL, fsS);
-   PanelLabel("V_BS", StringFormat(" %3d / %d", gBuyScore, gMinQuality), px, row, buySCL, fsS);
-   row += lh - 1;
+   color stKcol = (gStochK>=InpStochSellLevel)?C'255,55,55':(gStochK<=InpStochBuyLevel)?C'0,230,90':C'160,180,220';
+   string stKtag= (gStochK>=InpStochSellLevel)?" OVERBOUGHT":(gStochK<=InpStochBuyLevel)?" OVERSOLD":" NEUTRAL";
+   string stBar = ProgBar(gStochK,100.0,16);
+   PanelLabel("L_STK"," %K  ",lx+20,row,C'150,160,190',fsS);
+   PanelLabel("B_STK",stBar,  px+70, row,stKcol,fsS);
+   PanelLabel("V_STK",StringFormat(" %.1f%s",gStochK,stKtag),px,row,stKcol,fsS);
+   row+=lh-1;
 
-   // SELL score bar
-   int    sellPct  = (int)MathRound(gSellScore * 100.0 / 140);
-   string sellBar  = ScoreBar(gSellScore, gMinQuality, 12);
-   color  sellSCL  = gSellScore >= gMinQuality ? C'240,60,60' : C'80,80,100';
-   color  sellLbl  = gSellScore >= gMinQuality ? C'240,60,60' : C'160,160,180';
-   PanelLabel("L_SS", " SELL", lx+10, row, sellLbl, fsS);
-   PanelLabel("B_SS", sellBar,  px+50, row, sellSCL, fsS);
-   PanelLabel("V_SS", StringFormat(" %3d / %d", gSellScore, gMinQuality), px, row, sellSCL, fsS);
-   row += lh + 2;
+   color stDcol=(gStochD>=InpStochSellLevel)?C'200,80,80':(gStochD<=InpStochBuyLevel)?C'0,180,80':C'120,130,160';
+   PanelLabel("L_STD"," %D  ",lx+20,row,C'150,160,190',fsS);
+   PanelLabel("V_STD",StringFormat(" %.1f",gStochD),px+70,row,stDcol,fsS);
+   PanelLabel("V_STC",StringFormat("   Sell≥%d  Buy≤%d",InpStochSellLevel,InpStochBuyLevel),px,row,C'80,90,120',fsS);
+   row+=lh+2;
 
-   // Auto reversal status
-   string revStr = InpAutoReversal
-      ? StringFormat(" AUTO-REV ON  (min=%d)", InpReversalMinScore)
-      : " AUTO-REV OFF";
-   color revClr = InpAutoReversal ? C'200,160,0' : C'70,70,90';
-   PanelLabel("V_AREV", revStr, lx+10, row, revClr, fsS);
-   row += lh;
-
-   // Last reversal info
-   if(StringLen(gLastReversalInfo) > 0)
+   // Pending signal countdown
+   if(isPending)
    {
-      PanelLabel("V_LREV", StringFormat(" Last flip: %s", gLastReversalInfo), lx+10, row, C'180,120,0', fsS);
-      row += lh - 1;
+      int waited = (iBars(InpSymbol,PERIOD_M1)-1) - gPendingBar;
+      int maxW   = InpStochMaxWaitBars>0?InpStochMaxWaitBars:99;
+      string waitBar = ProgBar((double)waited,maxW,14);
+      color  waitCol = waited>maxW*0.7?clrOrange:C'0,160,240';
+      PanelRect("PEND_BG",x,row,W,lh+4,C'10,25,45',C'0,120,200');
+      PanelLabel("V_PEND",StringFormat(" Menunggu Stoch: bar %d/%d  [%s]",waited,maxW,waitBar),lx+20,row+2,waitCol,fsS);
+      row+=lh+6;
    }
 
-   // ════════════════════════════════════
-   // SECTION: MULTI-TIMEFRAME TREND
-   // ════════════════════════════════════
-   PanelLabel("SEP2", " ─────────────────────────────", lx+10, row, C'40,45,75', fsS); row += lh - 3;
-   PanelLabel("SEC2", " ▸ MULTI-TIMEFRAME TREND", lx+10, row, C'100,120,200', fsS); row += lh - 2;
+   // ══════════════════════════════════════════
+   // [4] SIGNAL STRENGTH
+   // ══════════════════════════════════════════
+   PanelRect("SEP_SS",x,row,W,1,C'28,32,60'),row+=3;
+   PanelLabel("SEC_SS"," ◆ SIGNAL STRENGTH",lx+20,row,C'80,160,255',fsS); row+=lh-1;
 
-   // M1 / M5 / M15 in a single row
-   string m1t = gM1Bull ? "M1 ▲BULL" : gM1Bear ? "M1 ▼BEAR" : "M1 ─MIX";
-   string m5t = gM5Bull ? "M5 ▲BULL" : gM5Bear ? "M5 ▼BEAR" : "M5 ─MIX";
-   string m15t= gM15Bull? "M15▲BULL" : gM15Bear? "M15▼BEAR" : "M15─MIX";
-   color m1c  = gM1Bull  ? C'0,210,80'  : gM1Bear  ? C'230,55,55'  : C'120,120,140';
-   color m5c  = gM5Bull  ? C'0,210,80'  : gM5Bear  ? C'230,55,55'  : C'120,120,140';
-   color m15c = gM15Bull ? C'0,210,80'  : gM15Bear ? C'230,55,55'  : C'120,120,140';
+   color buySCL  = gBuyScore>=gMinQuality?C'0,235,85':C'70,75,100';
+   color sellSCL = gSellScore>=gMinQuality?C'240,55,55':C'70,75,100';
+   PanelLabel("L_BS"," BUY ", lx+20,row,buySCL,fsS);
+   PanelLabel("B_BS",ScoreBar(gBuyScore,gMinQuality,12),px+65,row,buySCL,fsS);
+   PanelLabel("V_BS",StringFormat(" %3d/%d",gBuyScore,gMinQuality),px,row,buySCL,fsS);
+   row+=lh-1;
+   PanelLabel("L_SS"," SELL",lx+20,row,sellSCL,fsS);
+   PanelLabel("B_SS",ScoreBar(gSellScore,gMinQuality,12),px+65,row,sellSCL,fsS);
+   PanelLabel("V_SS",StringFormat(" %3d/%d",gSellScore,gMinQuality),px,row,sellSCL,fsS);
+   row+=lh+1;
 
-   PanelLabel("V_M1",  " "+m1t,  lx+10,    row, m1c,  fsS);
-   PanelLabel("V_M5",  " "+m5t,  lx-40,    row, m5c,  fsS);
-   PanelLabel("V_M15", " "+m15t, lx-100,   row, m15c, fsS);
-   row += lh;
+   // Auto-reversal line
+   color revClr=InpAutoReversal?C'200,155,0':C'60,65,90';
+   string revStr=InpAutoReversal?StringFormat(" ⟲ AUTO-REV ON (min=%d)",InpReversalMinScore):" ⟲ AUTO-REV OFF";
+   PanelLabel("V_AREV",revStr,lx+20,row,revClr,fsS); row+=lh-1;
+   if(StringLen(gLastReversalInfo)>0)
+   { PanelLabel("V_LREV",StringFormat(" Last flip: %s",gLastReversalInfo),lx+20,row,C'170,115,0',fsS); row+=lh-1; }
 
-   // Regime + Bull/Bear count
-   string regime = (gBullCount>=2) ? "BUY BIAS" : (gBearCount>=2) ? "SELL BIAS" : gSidewaysFlag ? "SIDEWAYS" : "MIXED";
-   color  regCol = (gBullCount>=2) ? C'0,210,80' : (gBearCount>=2) ? C'230,55,55' : C'180,120,0';
-   string countTxt = StringFormat(" Bulls:%d  Bears:%d  Regime:", gBullCount, gBearCount);
-   PanelLabel("V_REGC", countTxt, lx+10, row, C'140,140,160', fsS);
-   PanelLabel("V_REGV", " "+regime, px,   row, regCol, fsS);
-   row += lh + 2;
+   // ══════════════════════════════════════════
+   // [5] MULTI-TF TREND
+   // ══════════════════════════════════════════
+   PanelRect("SEP_TF",x,row,W,1,C'28,32,60'),row+=3;
+   PanelLabel("SEC_TF"," ◆ MULTI-TF TREND",lx+20,row,C'80,160,255',fsS); row+=lh-1;
 
-   // ════════════════════════════════════
-   // SECTION: INDICATORS
-   // ════════════════════════════════════
-   PanelLabel("SEP3", " ─────────────────────────────", lx+10, row, C'40,45,75', fsS); row += lh - 3;
-   PanelLabel("SEC3", " ▸ INDICATORS", lx+10, row, C'100,120,200', fsS); row += lh - 2;
+   color m1c =gM1Bull?C'0,215,85':gM1Bear?C'235,55,55':C'110,115,140';
+   color m5c =gM5Bull?C'0,215,85':gM5Bear?C'235,55,55':C'110,115,140';
+   color m15c=gM15Bull?C'0,215,85':gM15Bear?C'235,55,55':C'110,115,140';
+   PanelLabel("V_M1", " M1 "+(gM1Bull?"▲BULL":gM1Bear?"▼BEAR":"─MIX"),lx+20,  row,m1c, fsS);
+   PanelLabel("V_M5", " M5 "+(gM5Bull?"▲BULL":gM5Bear?"▼BEAR":"─MIX"),lx-30,  row,m5c, fsS);
+   PanelLabel("V_M15"," M15"+(gM15Bull?"▲BULL":gM15Bear?"▼BEAR":"─MIX"),lx-95, row,m15c,fsS);
+   row+=lh;
 
-   // RSI gauge
-   string rsiBar = ProgBar(gRsiVal, 100.0, 14);
-   color  rsiCol = (gRsiVal >= InpOverboughtRSI) ? C'230,55,55' :
-                   (gRsiVal <= InpOversoldRSI)   ? C'0,200,80'  :
-                   (gRsiVal >= 50)               ? C'200,160,0' : C'0,180,120';
-   string rsiTag = (gRsiVal>=InpOverboughtRSI)?" PEAK":(gRsiVal<=InpOversoldRSI)?" DEEP":" OK";
-   PanelLabel("L_RSI", " RSI  ", lx+10, row, C'160,160,180', fsS);
-   PanelLabel("B_RSI", rsiBar,    px+55, row, rsiCol, fsS);
-   PanelLabel("V_RSI", StringFormat(" %.1f%s", gRsiVal, rsiTag), px, row, rsiCol, fsS);
-   row += lh - 1;
+   string regime=(gBullCount>=2)?"BUY BIAS":(gBearCount>=2)?"SELL BIAS":gSidewaysFlag?"SIDEWAYS":"MIXED";
+   color  regCol=(gBullCount>=2)?C'0,215,85':(gBearCount>=2)?C'235,55,55':C'175,120,0';
+   PanelLabel("V_REGC",StringFormat(" Bulls:%d Bears:%d Regime:",gBullCount,gBearCount),lx+20,row,C'130,135,160',fsS);
+   PanelLabel("V_REGV"," "+regime,px,row,regCol,fsS);
+   row+=lh+2;
 
-   // ADX gauge
-   string adxBar = ProgBar(gAdxVal, 50.0, 14);
-   color  adxCol = (gAdxVal >= 25) ? clrGold : C'100,100,130';
-   string adxTag = (gAdxVal >= 25) ? " TREND" : (gAdxVal <= InpSideMaxADX) ? " SIDE" : " WEAK";
-   PanelLabel("L_ADX", " ADX  ", lx+10, row, C'160,160,180', fsS);
-   PanelLabel("B_ADX", adxBar,    px+55, row, adxCol, fsS);
-   PanelLabel("V_ADX", StringFormat(" %.1f%s", gAdxVal, adxTag), px, row, adxCol, fsS);
-   row += lh - 1;
+   // ══════════════════════════════════════════
+   // [6] INDICATORS
+   // ══════════════════════════════════════════
+   PanelRect("SEP_IN",x,row,W,1,C'28,32,60'),row+=3;
+   PanelLabel("SEC_IN"," ◆ INDICATORS",lx+20,row,C'80,160,255',fsS); row+=lh-1;
 
-   // ATR
-   PanelLabel("L_ATR", StringFormat(" ATR  %.3f  (OK:%s)", gAtrVal,
-              (gAtrVal>=InpMinATRPrice&&gAtrVal<=InpMaxATRPrice)?"YES":"NO"),
-              lx+10, row, (gAtrVal>=InpMinATRPrice&&gAtrVal<=InpMaxATRPrice)?C'0,180,100':C'160,80,80', fsS);
-   row += lh + 2;
+   color rsiCol=(gRsiVal>=InpOverboughtRSI)?C'235,55,55':(gRsiVal<=InpOversoldRSI)?C'0,205,85':(gRsiVal>=50)?C'200,155,0':C'0,175,120';
+   string rsiTag=(gRsiVal>=InpOverboughtRSI)?" PEAK":(gRsiVal<=InpOversoldRSI)?" DEEP":" OK";
+   PanelLabel("L_RSI"," RSI  ",lx+20,row,C'150,155,185',fsS);
+   PanelLabel("B_RSI",ProgBar(gRsiVal,100.0,12),px+65,row,rsiCol,fsS);
+   PanelLabel("V_RSI",StringFormat(" %.1f%s",gRsiVal,rsiTag),px,row,rsiCol,fsS);
+   row+=lh-1;
 
-   // ════════════════════════════════════
-   // SECTION: SR LEVELS
-   // ════════════════════════════════════
-   PanelLabel("SEP4", " ─────────────────────────────", lx+10, row, C'40,45,75', fsS); row += lh - 3;
-   PanelLabel("SEC4", " ▸ SUPPORT / RESISTANCE", lx+10, row, C'100,120,200', fsS); row += lh - 2;
+   color adxCol=(gAdxVal>=25)?clrGold:C'90,95,125';
+   string adxTag=(gAdxVal>=25)?" TREND":(gAdxVal<=InpSideMaxADX)?" SIDE":" WEAK";
+   PanelLabel("L_ADX"," ADX  ",lx+20,row,C'150,155,185',fsS);
+   PanelLabel("B_ADX",ProgBar(gAdxVal,50.0,12),px+65,row,adxCol,fsS);
+   PanelLabel("V_ADX",StringFormat(" %.1f%s",gAdxVal,adxTag),px,row,adxCol,fsS);
+   row+=lh-1;
 
-   string supTxt = gSupLevel > 0 ? StringFormat("%.2f", gSupLevel) : "-";
-   string resTxt = gResLevel > 0 ? StringFormat("%.2f", gResLevel) : "-";
-   PanelLabel("V_SRLVL", StringFormat(" Sup: %s    Res: %s", supTxt, resTxt), lx+10, row, C'160,160,180', fsS);
-   row += lh - 1;
+   bool atrOK2=(gAtrVal>=InpMinATRPrice&&gAtrVal<=InpMaxATRPrice);
+   PanelLabel("L_ATR",StringFormat(" ATR  %.3f (%s)",gAtrVal,atrOK2?"OK":"!"),
+              lx+20,row,atrOK2?C'0,175,100':C'200,70,70',fsS);
+   row+=lh+2;
 
-   color srCol = (gSRStatus=="NEUTRAL") ? C'100,100,130' :
-                 (StringFind(gSRStatus,"BUY")>=0 || StringFind(gSRStatus,"SUPPORT")>=0) ? C'0,200,80' : C'230,55,55';
-   PanelLabel("V_SRS", StringFormat(" Status: %s", gSRStatus), lx+10, row, srCol, fsS);
-   row += lh - 1;
+   // ══════════════════════════════════════════
+   // [7] SR LEVELS
+   // ══════════════════════════════════════════
+   PanelRect("SEP_SR",x,row,W,1,C'28,32,60'),row+=3;
+   PanelLabel("SEC_SR"," ◆ SUPPORT / RESISTANCE",lx+20,row,C'80,160,255',fsS); row+=lh-1;
 
-   bool anyBlockBuy  = gSRBlockBuy  || gPrecBlockBuy  || gPeakBlock;
-   bool anyBlockSell = gSRBlockSell || gPrecBlockSell || gDeepBlock;
-   string blockTxt = (!anyBlockBuy && !anyBlockSell)     ? "✓ CLEAR" :
-                     (anyBlockBuy  && anyBlockSell)       ? "✗ BOTH BLOCKED" :
-                     anyBlockBuy                          ? (gPeakBlock?"✗ PEAK(RSI)":"✗ BLOCK BUY") :
-                                                            (gDeepBlock?"✗ DEEP(RSI)":"✗ BLOCK SELL");
-   color blockCol = (blockTxt=="✓ CLEAR") ? C'0,180,80' : C'230,55,55';
-   PanelLabel("V_BLK", StringFormat(" Filter: %s", blockTxt), lx+10, row, blockCol, fsS);
-   row += lh + 2;
+   string supTxt=gSupLevel>0?StringFormat("%.2f",gSupLevel):"-";
+   string resTxt=gResLevel>0?StringFormat("%.2f",gResLevel):"-";
+   PanelLabel("V_SRLVL",StringFormat(" Sup:%-8s Res:%s",supTxt,resTxt),lx+20,row,C'150,155,185',fsS); row+=lh-1;
 
-   // ════════════════════════════════════
-   // SECTION: ACTIVE TRADE
-   // ════════════════════════════════════
-   PanelLabel("SEP5", " ─────────────────────────────", lx+10, row, C'40,45,75', fsS); row += lh - 3;
+   color srCol2=(gSRStatus=="NEUTRAL")?C'90,95,120':(StringFind(gSRStatus,"BUY")>=0||StringFind(gSRStatus,"SUPPORT")>=0)?C'0,200,80':C'230,55,55';
+   PanelLabel("V_SRS",StringFormat(" %s",gSRStatus),lx+20,row,srCol2,fsS);
+   bool anyBlockBuy2 =gSRBlockBuy||gPrecBlockBuy||gPeakBlock;
+   bool anyBlockSell2=gSRBlockSell||gPrecBlockSell||gDeepBlock;
+   string bTxt=(!anyBlockBuy2&&!anyBlockSell2)?"✓ CLEAR":(anyBlockBuy2&&anyBlockSell2)?"✗ BOTH":anyBlockBuy2?(gPeakBlock?"✗ PEAK":"✗ BLK-B"):(gDeepBlock?"✗ DEEP":"✗ BLK-S");
+   color  bCol=(bTxt=="✓ CLEAR")?C'0,175,80':C'230,55,55';
+   PanelLabel("V_BLK",StringFormat("  Filter:%s",bTxt),px+80,row,bCol,fsS);
+   row+=lh+2;
+
+   // ══════════════════════════════════════════
+   // [8] ACTIVE TRADE
+   // ══════════════════════════════════════════
+   PanelRect("SEP_TR",x,row,W,1,C'28,32,60'),row+=3;
 
    if(hasTrade)
    {
-      bool isBuy = (gDir == 1);
-      color tradeHdr = isBuy ? C'0,80,30' : C'80,10,10';
-      color tradeFG  = isBuy ? C'0,240,100' : C'255,70,70';
-      string dirLabel= isBuy ? "▲ BUY TRADE ACTIVE" : "▼ SELL TRADE ACTIVE";
+      bool  isBuy   =(gDir==1);
+      color trHdr   =isBuy?C'0,70,25':C'70,10,10';
+      color trFG    =isBuy?C'0,245,105':C'255,60,60';
+      string trLabel=isBuy?"▲ BUY  ACTIVE":"▼ SELL ACTIVE";
 
-      PanelRect("THDR", x, row, W, lh+2, tradeHdr, tradeFG);
-      PanelLabel("SEC5", StringFormat(" ▸ %s  [%d pos]", dirLabel, posCount), lx+10, row+2, tradeFG, fsS);
-      row += lh + 4;
+      PanelRect("THDR",x,row,W,lh+4,trHdr,trFG);
+      PanelLabel("SEC_TR",StringFormat(" ◆ %s   [%d pos]",trLabel,posCount),lx+20,row+3,trFG,fsS);
+      row+=lh+6;
 
       // Entry / SL
-      double distToSL  = MathAbs(curPrice - gSL);
-      double distToTP3 = MathAbs(curPrice - gTP3);
-      PanelLabel("L_EN2", StringFormat(" Entry  : %.2f", gEntry), lx+10, row, C'200,180,80', fsS);
-      row += lh - 1;
-      PanelLabel("L_SL2", StringFormat(" SL     : %.2f   [-$%.2f]", gSL, InpSLDollars), lx+10, row, C'230,55,55', fsS);
-      row += lh + 2;
+      PanelLabel("L_EN2",StringFormat(" Entry : %.2f",gEntry),lx+20,row,C'210,185,80',fsS); row+=lh-1;
+      PanelLabel("L_SL2",StringFormat(" SL    : %.2f   [-$%.2f]",gSL,InpSLDollars),lx+20,row,C'235,55,55',fsS); row+=lh+1;
 
-      // TP Progress bars
-      double tp1Pct = 0, tp2Pct = 0, tp3Pct = 0;
-      if(gEntry != 0 && gTP1 != gEntry)
-         tp1Pct = MathMin(MathMax(isBuy?(curPrice-gEntry)/(gTP1-gEntry):(gEntry-curPrice)/(gEntry-gTP1),0),1.0)*100;
-      if(gEntry != 0 && gTP2 != gEntry)
-         tp2Pct = MathMin(MathMax(isBuy?(curPrice-gEntry)/(gTP2-gEntry):(gEntry-curPrice)/(gEntry-gTP2),0),1.0)*100;
-      if(gEntry != 0 && gTP3 != gEntry)
-         tp3Pct = MathMin(MathMax(isBuy?(curPrice-gEntry)/(gTP3-gEntry):(gEntry-curPrice)/(gEntry-gTP3),0),1.0)*100;
+      // TP Progress
+      double tp1Pct=0,tp2Pct=0,tp3Pct=0;
+      if(gEntry!=0&&gTP1!=gEntry) tp1Pct=MathMin(MathMax(isBuy?(curPrice-gEntry)/(gTP1-gEntry):(gEntry-curPrice)/(gEntry-gTP1),0),1.0)*100;
+      if(gEntry!=0&&gTP2!=gEntry) tp2Pct=MathMin(MathMax(isBuy?(curPrice-gEntry)/(gTP2-gEntry):(gEntry-curPrice)/(gEntry-gTP2),0),1.0)*100;
+      if(gEntry!=0&&gTP3!=gEntry) tp3Pct=MathMin(MathMax(isBuy?(curPrice-gEntry)/(gTP3-gEntry):(gEntry-curPrice)/(gEntry-gTP3),0),1.0)*100;
 
-      // TP1
-      string tp1Bar  = TPBar(curPrice, gEntry, gTP1, 12, isBuy);
-      color  tp1Col  = gHitTP1 ? clrGold : C'0,200,80';
-      string tp1Mark = gHitTP1 ? " ✓ BE" : StringFormat(" %3.0f%%", tp1Pct);
-      PanelLabel("B_T1", " TP1 [" + tp1Bar + "]", lx+10, row, tp1Col, fsS);
-      PanelLabel("V_T1", StringFormat(" %.2f%s", gTP1, tp1Mark), px, row, tp1Col, fsS);
-      row += lh - 1;
+      color tp1Col=gHitTP1?clrGold:C'0,205,85';
+      color tp2Col=gHitTP2?clrGold:C'0,185,85';
+      PanelLabel("B_T1"," TP1["+TPBar(curPrice,gEntry,gTP1,10,isBuy)+"]",lx+20,row,tp1Col,fsS);
+      PanelLabel("V_T1",StringFormat(" %.2f %s",gTP1,gHitTP1?"✓BE":StringFormat("%3.0f%%",tp1Pct)),px,row,tp1Col,fsS); row+=lh-1;
+      PanelLabel("B_T2"," TP2["+TPBar(curPrice,gEntry,gTP2,10,isBuy)+"]",lx+20,row,tp2Col,fsS);
+      PanelLabel("V_T2",StringFormat(" %.2f %s",gTP2,gHitTP2?"✓TP1":StringFormat("%3.0f%%",tp2Pct)),px,row,tp2Col,fsS); row+=lh-1;
+      PanelLabel("B_T3"," TP3["+TPBar(curPrice,gEntry,gTP3,10,isBuy)+"]",lx+20,row,C'0,165,85',fsS);
+      PanelLabel("V_T3",StringFormat(" %.2f %3.0f%%",gTP3,tp3Pct),px,row,C'0,165,85',fsS); row+=lh+1;
 
-      // TP2
-      string tp2Bar  = TPBar(curPrice, gEntry, gTP2, 12, isBuy);
-      color  tp2Col  = gHitTP2 ? clrGold : C'0,180,80';
-      string tp2Mark = gHitTP2 ? " ✓ TP1" : StringFormat(" %3.0f%%", tp2Pct);
-      PanelLabel("B_T2", " TP2 [" + tp2Bar + "]", lx+10, row, tp2Col, fsS);
-      PanelLabel("V_T2", StringFormat(" %.2f%s", gTP2, tp2Mark), px, row, tp2Col, fsS);
-      row += lh - 1;
-
-      // TP3
-      string tp3Bar  = TPBar(curPrice, gEntry, gTP3, 12, isBuy);
-      color  tp3Col  = C'0,160,80';
-      PanelLabel("B_T3", " TP3 [" + tp3Bar + "]", lx+10, row, tp3Col, fsS);
-      PanelLabel("V_T3", StringFormat(" %.2f  %3.0f%%", gTP3, tp3Pct), px, row, tp3Col, fsS);
-      row += lh + 1;
-
-      // Price now
-      PanelLabel("L_NOW", StringFormat(" Price : %.2f", curPrice), lx+10, row, clrWhite, fsS);
-      row += lh - 1;
-
-      // P/L with progress bar toward TP3
-      color plCol  = totalPL >= 0 ? C'0,230,90' : C'230,55,55';
-      string plSign= totalPL >= 0 ? "+" : "";
-      string plBar = ProgBar(MathAbs(totalPL), InpTP3Dollars * posCount, 12);
-      PanelLabel("L_PL",  StringFormat(" P/L   : %s%.2f $", plSign, totalPL), lx+10, row, plCol, fs);
-      row += lh - 1;
-      PanelLabel("B_PL",  " [" + plBar + "]", lx+10, row, plCol, fsS);
-      row += lh - 1;
-
-      // Hold time bar
-      string holdBar = ProgBar(holdMin, InpMaxHoldMinutes, 12);
-      color  holdCol = holdMin > InpMaxHoldMinutes*0.8 ? clrOrange : C'100,140,200';
-      PanelLabel("B_HOLD"," [" + holdBar + "] " + StringFormat("%d/%dmin", holdMin, InpMaxHoldMinutes), lx+10, row, holdCol, fsS);
-      row += lh + 2;
+      // Price / Float P&L / Hold
+      PanelLabel("L_NOW",StringFormat(" Price : %.2f",curPrice),lx+20,row,clrWhite,fsS); row+=lh-1;
+      color plCol=floatPL>=0?C'0,235,95':C'235,55,55';
+      string plSign=floatPL>=0?"+":"";
+      PanelLabel("L_PL", StringFormat(" Float : %s%.2f $",plSign,floatPL),lx+20,row,plCol,fs);
+      PanelLabel("B_PL", "["+ProgBar(MathAbs(floatPL),InpTP3Dollars*MathMax(posCount,1),10)+"]",px+55,row,plCol,fsS); row+=lh-1;
+      string holdBar=ProgBar(holdMin,InpMaxHoldMinutes,10);
+      color  holdCol=holdMin>InpMaxHoldMinutes*0.8?clrOrange:C'90,135,200';
+      PanelLabel("B_HOLD",StringFormat(" Hold  : %d/%dmin [%s]",holdMin,InpMaxHoldMinutes,holdBar),lx+20,row,holdCol,fsS);
+      row+=lh+3;
    }
    else
    {
-      PanelLabel("SEC5", " ▸ NO ACTIVE TRADE", lx+10, row, C'60,60,90', fsS);
-      row += lh;
-      // Clear old trade labels
-      PanelLabel("L_EN2","", lx, row, clrNONE, 1); PanelLabel("L_SL2","", lx, row, clrNONE, 1);
-      PanelLabel("B_T1", "", lx, row, clrNONE, 1); PanelLabel("V_T1", "", px, row, clrNONE, 1);
-      PanelLabel("B_T2", "", lx, row, clrNONE, 1); PanelLabel("V_T2", "", px, row, clrNONE, 1);
-      PanelLabel("B_T3", "", lx, row, clrNONE, 1); PanelLabel("V_T3", "", px, row, clrNONE, 1);
-      PanelLabel("L_NOW","", lx, row, clrNONE, 1); PanelLabel("L_PL","",  lx, row, clrNONE, 1);
-      PanelLabel("B_PL", "", lx, row, clrNONE, 1); PanelLabel("B_HOLD","",lx, row, clrNONE, 1);
-      PanelLabel("THDR", "", lx, row, clrNONE, 1);
-      row += 2;
+      PanelLabel("SEC_TR"," ◆ NO ACTIVE TRADE",lx+20,row,C'55,58,88',fsS); row+=lh+1;
+      // hide stale trade labels
+      string clrList[]={"L_EN2","L_SL2","B_T1","V_T1","B_T2","V_T2","B_T3","V_T3","L_NOW","L_PL","B_PL","B_HOLD","THDR"};
+      for(int i=0;i<ArraySize(clrList);i++) PanelLabel(clrList[i],"",px,row,clrNONE,1);
    }
 
-   // ════════════════════════════════════
-   // SECTION: SESSION + STATS
-   // ════════════════════════════════════
-   PanelLabel("SEP6", " ─────────────────────────────", lx+10, row, C'40,45,75', fsS); row += lh - 3;
+   // ══════════════════════════════════════════
+   // [9] SESSION + PERFORMANCE STATS
+   // ══════════════════════════════════════════
+   PanelRect("SEP_ST2",x,row,W,1,C'28,32,60'),row+=3;
+   PanelLabel("SEC_SES"," ◆ SESSION & PERFORMANCE",lx+20,row,C'80,160,255',fsS); row+=lh-1;
 
    // Session
-   color sesCol = gSessionOK ? C'0,210,80' : C'80,80,100';
-   string sesTxt= gSessionOK ? " ● SESSION ON  (WIB 04-15)" : " ○ SESSION OFF (WIB 04-15)";
-   PanelLabel("V_SES", sesTxt, lx+10, row, sesCol, fsS); row += lh - 1;
+   color sesCol=gSessionOK?C'0,215,85':C'70,75,100';
+   string sesTxt=gSessionOK?" ● SESSION ON  (WIB 04-15)":" ○ SESSION OFF (WIB 04-15)";
+   PanelLabel("V_SES",sesTxt,lx+20,row,sesCol,fsS); row+=lh-1;
+   string modeStr=StringFormat(" Mode:%-10s Entry:%-10s Rev:%s",InpModeSignal,InpEntryMode,InpAutoReversal?"ON":"OFF");
+   PanelLabel("V_MODE",modeStr,lx+20,row,C'90,95,130',fsS); row+=lh+2;
 
-   // Mode info
-   string modeInfo = StringFormat(" Mode:%s  Entry:%s  Rev:%s",
-                                   InpModeSignal, InpEntryMode, InpAutoReversal?"ON":"OFF");
-   PanelLabel("V_MODE", modeInfo, lx+10, row, C'100,100,140', fsS); row += lh + 1;
+   // ── PERFORMANCE STATS BOX ──
+   int    totalClosed = gWinCount + gLossCount;
+   double wr          = totalClosed>0?(gWinCount*100.0/totalClosed):0;
+   double totalPLall  = gTotalClosedPL + floatPL;  // closed + floating
+   color  wrCol       = wr>=60?C'0,205,85':wr>=50?C'200,155,0':C'225,50,50';
+   color  netCol      = totalPLall>=0?C'0,235,95':C'235,55,55';
+   color  closedCol   = gTotalClosedPL>=0?C'0,205,80':C'220,50,50';
 
-   // Win/Loss stats
-   int    totalTrades = gWinCount + gLossCount;
-   double wr          = totalTrades > 0 ? (gWinCount * 100.0 / totalTrades) : 0;
-   string wrBar       = ProgBar(wr, 100.0, 14);
-   color  wrCol       = wr >= 60 ? C'0,200,80' : wr >= 50 ? C'200,160,0' : C'220,50,50';
+   PanelRect("STAT_BG",x,row,W,lh*5+10,C'12,14,28',C'40,50,100');
+   row+=3;
+   PanelLabel("L_STAT1",StringFormat(" Trades  : %d  (W:%d  L:%d)",totalClosed,gWinCount,gLossCount),
+              lx+20,row,C'160,165,200',fsS); row+=lh-1;
+   PanelLabel("L_STAT2",StringFormat(" WinRate : %.1f%%",wr),lx+20,row,wrCol,fsS);
+   PanelLabel("B_WR","["+ProgBar(wr,100.0,12)+"]",px+60,row,wrCol,fsS); row+=lh-1;
+   PanelLabel("L_STAT3",StringFormat(" Closed PL: %s%.2f $",gTotalClosedPL>=0?"+":"",gTotalClosedPL),
+              lx+20,row,closedCol,fsS); row+=lh-1;
+   PanelLabel("L_STAT4",StringFormat(" Float PL : %s%.2f $",floatPL>=0?"+":"",floatPL),
+              lx+20,row,floatPL>=0?C'0,200,80':C'220,50,50',fsS); row+=lh-1;
+   PanelLabel("L_STAT5",StringFormat(" NET P&L  : %s%.2f $",totalPLall>=0?"+":"",totalPLall),
+              lx+20,row,netCol,fs); row+=lh+4;
 
-   PanelLabel("L_STAT", StringFormat(" W:%d  L:%d  Total:%d  WR:%.0f%%", gWinCount, gLossCount, totalTrades, wr),
-              lx+10, row, C'160,160,180', fsS); row += lh - 1;
-   PanelLabel("B_WR", " [" + wrBar + "] " + StringFormat("%.0f%%", wr), lx+10, row, wrCol, fsS);
-   row += lh + 4;
+   // Total signals opened
+   PanelLabel("V_SIG",StringFormat(" Signals opened: %d",gTotalSignals),lx+20,row,C'80,90,130',fsS);
+   row+=lh+4;
 
-   // ── Resize background to content ──
-   PanelRect("BG",       x, y0, W, row - y0 + 4, C'10,12,22', C'40,50,90');
-   PanelRect("HDR",      x, y0, W, lh+4,          C'18,20,45', C'60,80,160');
+   // ── Resize BG ──
+   PanelRect("BG", x,y0,W,row-y0+4,C'8,10,20',C'35,45,90');
+   PanelRect("HDR",x,y0,W,lh+6,    C'14,16,38',C'50,70,160');
 
    ChartRedraw(0);
 }
